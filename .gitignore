@@ -1,0 +1,51 @@
+# ---- Project data: never in the repo (client drawings, markups, renders) ----
+2[0-9]-[0-9][0-9][0-9]_*/
+2[0-9][0-9][0-9][0-9]_*/
+archive/
+backups/
+inputs/
+output/
+crops/
+loc_*/
+renders/
+snapshots/
+revit-library-reorg/
+
+# ---- Run artifacts (regenerated every swarm run) ----
+logs/
+manifests/
+cache/
+locks/
+ledger/
+retro/
+build/backup_*/
+build/staged/
+build/*_start.txt
+build/*_result.txt
+build/timings.txt
+build/p2_times.txt
+scripts_tmp/
+scratch_*.txt
+REPORT.md
+
+# ---- Symlinks to project folders ----
+garden
+northgate
+retreat
+
+# ---- Local-only Claude Code settings (keep settings.json, drop machine overrides) ----
+.claude/settings.local.json
+
+# ---- Big binaries, even if they land in a tracked folder ----
+*.pdf
+*.png
+*.jpg
+*.dwg
+*.rvt
+*.xlsx
+*.zip
+*.bak
+*.pyc
+__pycache__/
+.DS_Store
+Thumbs.db

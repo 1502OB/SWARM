@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "swarm task manifest (<task-id>.task.json, written by revision-planner)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "task_id", "app", "operation", "target_ids", "change", "source_requirement_id", "assigned_agent"],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "app": {"type": "string", "enum": ["revit", "acad"]},
+    "operation": {"type": "string", "minLength": 1},
+    "target_ids": {"type": "array", "items": {"type": ["string", "integer"]}},
+    "change": {"type": "string", "minLength": 1},
+    "source_requirement_id": {"type": "string", "minLength": 1},
+    "assigned_agent": {"type": "string", "enum": ["revit-writer", "acad-writer", "excel-writer"]}
+  }
+}

@@ -1,0 +1,25 @@
+;; Read-only: dump DCW/DHW/WSFU/GPM callouts on P1.00, P1.01 and Model to a text file.
+(defun _enc_txt (ed / ty s)
+  (setq ty (cdr (assoc 0 ed)))
+  (cond ((= ty "MULTILEADER") (setq s (cdr (assoc 304 ed))))
+        ((= ty "MTEXT") (setq s "")
+         (foreach g ed (if (= (car g) 3) (setq s (strcat s (cdr g)))))
+         (setq s (strcat s (cdr (assoc 1 ed)))))
+        (t (setq s (cdr (assoc 1 ed)))))
+  (if s s ""))
+(defun c:ENC-CALLOUTS ( / ss i ed s lay pt f n)
+  (setq f (open "C:/Users/Jeremy/swarm/manifests/ENC-S2.callouts.txt" "w") n 0)
+  (setq ss (ssget "_X" '((-4 . "<OR") (0 . "TEXT") (0 . "MTEXT") (0 . "MULTILEADER") (-4 . "OR>")
+                         (-4 . "<OR") (410 . "P1.00") (410 . "P1.01") (410 . "Model") (-4 . "OR>"))))
+  (setq i 0)
+  (if ss
+    (while (< i (sslength ss))
+      (setq ed (entget (ssname ss i)) s (_enc_txt ed))
+      (if (wcmatch (strcase s) "*DCW*,*DHW*,*CW*,*HW*,*WSFU*,*GPM*")
+        (progn
+          (setq lay (cdr (assoc 410 ed)) pt (cdr (assoc 10 ed)) n (1+ n))
+          (write-line (strcat (cdr (assoc 5 ed)) "|" lay "|" (cdr (assoc 8 ed)) "|"
+                              (if pt (strcat (rtos (car pt) 2 1) "," (rtos (cadr pt) 2 1)) "") "|" s) f)))
+      (setq i (1+ i))))
+  (close f)
+  (strcat "callouts=" (itoa n)))

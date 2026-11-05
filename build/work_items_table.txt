@@ -1,0 +1,35 @@
+| MCG-001 | 1 | G101 | Title sheet, building data blo | 10,110 | response-only | False | needs_review | not plumbing |
+| MCG-002 | 1 | G101 | Title sheet, building data blo | 10,110 | response-only | False | needs_review | not plumbing |
+| MCG-003 | 8 | A101 | Floor plan, exterior at door D | 5'-0" min. with doors | response-only | False | needs_review | not plumbing |
+| MCG-004 | 8 | A101 | Floor plan, accessible path (g | 4'-0" min. accessible path, typ. | response-only | False | needs_review | not plumbing |
+| MCG-005 | 8 | A101 | Floor plan key notes F36 (grea | F36  GREESE INTERCEPTOR WITH TRAFFIC COVERS, SEE PLUMBING DRAWINGS             FOR COMPLE | response-only | False | needs_review | not plumbing (architectural key note, on |
+| MCG-006 | 8 | A101 | Floor plan key notes F37 | F37  OUTDDOR PATIO AREA FOR FUTURE TENANT. SEE LANDSCAPE DRAWINGS             FOR COMPLET | response-only | False | needs_review | not plumbing |
+| MCG-007 | 10 | A141 | Roof plan | Show wall bracing to match sections and structural, typ. | response-only | False | needs_review | not plumbing |
+| MCG-008 | 10 | A141 | Roof plan | Clean up all old cricket lines, typ. | response-only | False | needs_review | not plumbing |
+| MCG-009 | 10 | A141 | Roof plan | Coordinate roof plan with structural engineer. Roof framing plan needs to be updated to ma | response-only | False | needs_review | not plumbing |
+| MCG-010 | 10 | A141 | Roof plan, PV legend | Need to coordinate with Photovoltaic panel system drawings by King Energy and delete this  | response-only | False | needs_review | not plumbing |
+| MCG-011 | 11 | A200 | Exterior elevations | Verify w/ 3'-0" typical design. Is this tenant's specific criteria? | response-only | False | needs_review | not plumbing |
+| MCG-012 | 11 | A200 | Exterior elevations / finish s | Update finish schedule for the latest | response-only | False | needs_review | not plumbing |
+| MCG-013 | 11 | A200 | Exterior elevations, wall | Show E.J. on wall, typ. | response-only | False | needs_review | not plumbing |
+| MCG-014 | 12 | A-301 | Wall section | 5'-7 1/4" | response-only | False | needs_review | not plumbing (NNorouzi measurement note, |
+| MCG-015 | 22 | S201 | Roof framing plan | Update bracing and cricket design/graphics to match arch'l. | response-only | False | needs_review | not plumbing |
+| MCG-016 | 27 | S304 | Structural section | Update per arch'l. | response-only | False | needs_review | not plumbing |
+| MCG-017 | 32 | None | ASR room, EUH (grid not visibl | We do not design the heater for ASR room for the project. | response-only | False | needs_review | not plumbing; also sheet number uncertai |
+| MCG-018 | 32 | None | ASR room door (grid not visibl | Do we need a door louver for ASR room? | response-only | False | needs_review | not plumbing; also sheet number uncertai |
+| MCG-019 | 32 | None | ASR room highlight (fragment o |  CF | response-only | False | needs_review | not plumbing; also sheet number uncertai |
+| MCG-020 | 32 | None | ASR room door louver highlight | OOR LOUVER | response-only | False | needs_review | not plumbing; also sheet number uncertai |
+| MCG-021 | 32 | None | ASR room, EG highlight | EG | response-only | False | needs_review | not plumbing; also sheet number uncertai |
+| MCG-022 | 33 | M201 | Roof plan, above RTUs | Verify all utility design with the Utility Matrix, dated 8/28/26, typ. | response-only | False | needs_review | not plumbing |
+| MCG-023 | 33 | M201 | Roof plan, RTU-1/RTU-3 area | We are designing 1 ton/300 SF for all tenant spaces per the utility matrix! | response-only | False | needs_review | not plumbing |
+| MCG-024 | 45 | E400 | Single line diagram, future me | Future meter section to be added at later date, if necessary | response-only | False | needs_review | not plumbing |
+| MCG-025 | 45 | E400 | Single line diagram (highlight | 1,200A | response-only | False | needs_review | not plumbing |
+| MCG-026 | 45 | E400 | Single line diagram (highlight | 1,200 AMPERE | response-only | False | needs_review | not plumbing |
+| MCG-027 | 45 | E400 | Single line diagram | Verify all utility design with the Utility Matrix, dated 8/28/26, typ. | response-only | False | needs_review | not plumbing |
+| MCG-028 | 52 | P201 | Roof plan, gas line risers at  | Gas lines above roof deck and cap for future extension and use by tenants, typ.  | revit-writer | False | needs_review | Grid/room not visible in crop; confirm a |
+| MCG-029 | 53 | P300 | Key notes list, note 3 grease  | Plumb. to provide 4,000 gal. | calc | True | needs_review | Interceptor sizing calc needed (3500 to  |
+| MCG-030 | 53 | P300 | Building exterior at FCO-1 | Clean out at building exterior, typ. | revit-writer | False | needs_review | Grid/room not visible in crop |
+| MCG-031 | 53 | P300 | Building exterior near FCO-1 ( | Clean out at building exterior, typ. | revit-writer | False | needs_review | Grid/room not visible in crop |
+| MCG-032 | 53 | P300 | Building exterior, side wall n | Clean out at building exterior, typ. | revit-writer | False | needs_review | Grid/room not visible in crop |
+| MCG-033 | 53 | P300 | Building exterior, side wall a | Clean out at building exterior, typ. | revit-writer | False | needs_review | Grid/room not visible in crop |
+| MCG-034 | 53 | P300 | Grease waste (G) line, floor p | Show grease line without branches to other tenant space (for serving one tenant space only | revit-writer | False | needs_review | Grid/room not visible in crop; confirm w |
+| MCG-035 | 53 | P300 | Plumbing floor plan, general ( | Verify all utility design with the Utility Matrix, dated 8/28/26, typ. | calc | True | needs_review | Utility Matrix dated 8/28/26 not in inpu |

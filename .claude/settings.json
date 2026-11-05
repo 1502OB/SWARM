@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__revit-mcp__.*|mcp__autocad-mcp__.*|mcp__Bluebeam__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/Jeremy/.claude/hooks/orchestrator_guard.py"
+          }
+        ]
+      }
+    ]
+  }
+}
