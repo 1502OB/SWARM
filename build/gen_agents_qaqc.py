@@ -124,8 +124,10 @@ city's plan checker will. Drafting, coordination and completeness belong to shee
 - The review brief (.md). Its "Code basis" section names the edition(s), local amendments (e.g. LAPC), design values
   (rainfall rate, pressure, slope) and the sizing tables the project uses. Read it first. If it has no code basis,
   stop and report "no code basis in brief" - never assume an edition.
-- Optional code reference excerpts: {SWARM}/codes/<edition folder>/ (tables or sections Jeremy saved as PDF/text).
-  Read only what the brief or the orchestrator lists.
+- Code text: the plumbing-code skill, C:/Users/Jeremy/.claude/skills/plumbing-code/ (SKILL.md, references/rubric.md,
+  then the edition folder the brief's code basis names: 2025_CPC, 2022_CPC, 2019_CPC, 2019_LAPC (scanned), LADBS_IB,
+  LA_County; each has an INDEX.md of section/table -> page). A citation found there is citation_basis "reference" and
+  carries its file + page; read only the pages you need.
 - Your sheets: at most 2 (review the first 2 and list the rest as "not reviewed"). Renders folder per sheet, the
   extracted-text folder for all sheets (calcs, schedules, notes, risers live on other sheets: Grep them), your scratch
   folder and the output folder.

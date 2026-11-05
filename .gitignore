@@ -49,3 +49,12 @@ retreat
 __pycache__/
 .DS_Store
 Thumbs.db
+
+# ---- More run artifacts / scratch ----
+visual/
+build/tb_loaded.txt
+.claude/worktrees/
+
+# ---- Hooks/skills mirror (build/sync_claude.py): page renders stay local, regenerated from L: PDFs ----
+claude/skills/plumbing-code/**/*.png
+claude/hooks/__pycache__/

@@ -6,6 +6,7 @@ Claude Code agent tree for 120 Degreez plumbing work: Revit MCP, AutoCAD MCP and
 
 - `.claude/settings.json` - Claude Code project settings and hooks
 - `build/` - `gen_agents*.py` and `gen_all.py`, which generate the agent definitions
+- `claude/hooks/`, `claude/skills/` - mirror of `~/.claude/hooks` and the firm skills (acad-conventions, revit-conventions, revit-api, plumbing-code), synced by `build/sync_claude.py`
 - `tools/`, `tools.json` - tool wrappers and the tool registry the agents call
 - `scripts/`, `validate.py` - helper scripts and the manifest validator
 - `templates/`, `schemas/` - task and manifest templates
@@ -26,7 +27,17 @@ Project data stays on Egnyte. This repo is the tooling only.
 ```
 git clone <repo-url> %USERPROFILE%\swarm
 cd %USERPROFILE%\swarm
+python build\sync_claude.py install
 python build\gen_all.py
 ```
 
-Then confirm the generated agents landed in `%USERPROFILE%\.claude\agents`.
+Then confirm the generated agents landed in `%USERPROFILE%\.claude\agents`. plumbing-code page renders (`*.png`) are not
+in the repo; re-run `claude\skills\plumbing-code\scripts\code_index.py` on the L: source PDFs if the image pages are needed.
+
+## Keeping hooks and skills in sync
+
+Agents regenerate from `build/` (`gen_all.py`); hooks and skills are copied files, so they need a sync step:
+
+- Edited a hook or skill in `~/.claude`: `python build\sync_claude.py pull`, then commit and push.
+- Pulled changes from GitHub: `python build\sync_claude.py install` (backs up anything it overwrites to `build\backup_claude_*`).
+- `python build\sync_claude.py status` lists anything that differs. The script never deletes files.

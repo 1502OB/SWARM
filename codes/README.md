@@ -1,5 +1,10 @@
 # Code reference excerpts for code-reviewer
 
+**Moved (2026-11-05):** code text now lives in the `plumbing-code` skill
+(`C:/Users/Jeremy/.claude/skills/plumbing-code/`): page-indexed extracts per edition under `references/<edition>/`,
+the check rubric in `references/rubric.md`, and the indexer `scripts/code_index.py` to add a PDF. Put new code PDFs
+through that script instead of copying excerpts here. The notes below are kept for history.
+
 code-reviewer cites code sections. Anything it cites from memory is marked `"citation_basis": "recalled"`
 and must be confirmed before it goes to a city. Put verified excerpts here so it can cite them as `"reference"`.
 

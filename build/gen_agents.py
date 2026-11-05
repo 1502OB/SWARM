@@ -218,10 +218,15 @@ def harden_writer(lock, warnings):
   If the return shows a partial commit that was not rolled back, record status "failed" with error starting
   "PARTIAL:" and stop.
 - Post warnings: after executing, re-query {warnings} and record it in write.json as post_warnings.
+- Counts (AU CS2138 "count what it did and what it skipped"): copy the script's `done=<n> skipped=<n> failed=<n>`
+  line into write.json as item {{"id":"COUNTS","result":"done=<n> skipped=<n> failed=<n>"}}. A return without that
+  line, or with failed > 0, is not "success".
+- Timeout: a call that times out is status "timeout" (not "failed"); the orchestrator reconciles it read-only
+  before anything else touches the app, and it is never re-run automatically.
 - write.json must validate against {SCHEMAS}/write.schema.json (run the validator on it after writing it): exactly
-  run_id, task_id, status (success|failed|rolled_back|invalid_manifest|already_applied), executed_at (ISO time),
-  items [{{id, result}}], post_warnings, error (string or null). A timeout is status "failed" with error starting
-  "TIMEOUT:"; a NO_GO dry run is "failed" with "NO_GO:". Everything else the procedure says to log (document, script
+  run_id, task_id, status (success|failed|rolled_back|invalid_manifest|already_applied|timeout), executed_at (ISO
+  time), items [{{id, result}}], post_warnings, error (string or null). A timeout is status "timeout" with error
+  starting "TIMEOUT:"; a NO_GO dry run is "failed" with "NO_GO:". Everything else the procedure says to log (document, script
   path, dry-run and raw return, created ids/handles, post_check, tool calls) goes to {MAN}/<task-id>.write.log.md.
 """
 
@@ -242,6 +247,9 @@ HARDEN_VERIFIER = f"""## Hardening rules
   visual check report PASS. Otherwise (no visual.json, or status "unavailable") mark it "PASS_API_ONLY" and do not
   report it as a full PASS.
 - verify.json gains "status": "PASS" | "PASS_API_ONLY" | "FAIL"; overall_pass is true only for "PASS".
+- Counts: from write.json you may also read the item with id "COUNTS". If done/skipped/failed differ from what
+  expected.json implies (e.g. 44 sheets expected, done=40 skipped=4 when nothing was in the target state yet), the
+  task is FAIL with reason "count mismatch", even if every sampled item passes. Report observed vs expected counts.
 """
 
 HARDEN_SCRIPTER = f"""## Hardening rules
@@ -252,6 +260,9 @@ HARDEN_SCRIPTER = f"""## Hardening rules
   it into the library; you do not do that yourself.
 - Every script must be idempotent where the API allows it: check for existing elements before creating, and skip
   items already in the target state (return them as "skipped: already in target state").
+- Every script (Revit and AutoCAD, real run and dry run) ends its return with one line
+  `done=<n> skipped=<n> failed=<n>` followed by the ids/handles of each group (counts first if the list is long), so a
+  run that quietly did nothing cannot look like one that worked.
 - One transaction group per batch, all or nothing: Revit, the TransactionGroup (or the single "auto" transaction)
   rolls back entirely on any failed item and returns "ROLLED_BACK <item id>: <error>"; AutoCAD, the RUN command
   wraps its work in an UNDO Begin/End group and on any failed item undoes the whole group and returns
@@ -334,7 +345,7 @@ write("scripter", fm(
     "Writes ONE batched script per task (C# for Revit send_code_to_revit, or .lsp for AutoCAD) plus an expected.json describing the post-state. Has no MCP access; never touches the models.",
     ["Read", "Write", "Glob", "Grep", "Skill"], "sonnet") + f"""You are scripter. You write scripts; you never run them and have no MCP tools.
 
-Before writing anything for Revit, load the `revit-conventions` skill (Skill tool) and follow it.
+Before writing anything for Revit, load the `revit-conventions` and `revit-api` skills (Skill tool) and follow them.
 For AutoCAD, load the `anthropic-skills:autocad-mcp-drafting` skill and follow its transport and helper patterns,
 and load the `acad-conventions` skill.
 
@@ -371,102 +382,17 @@ Read those; do not look for a scout manifest that was not listed.
   TransactionGroup, one Transaction per step, a failures preprocessor (delete warnings, ProceedWithRollBack on
   errors, FailureHandlingOptions.SetForcedModalHandling(false)), and roll back the group on any error. Helper
   classes/methods go after the body: `... return result; }} <helpers> public static object DummyTail() {{ return null;`
-- Reuse API calls from scripts that already ran OK on this bridge (ask the orchestrator which; e.g.
-  swarm/26032_mcg_rosedale_bakersfield_ca_P2679/pad11-1102/tasks/T1.cs, T8a.cs, T8a2.cs). In your reply add a line
-  "new_api: ..." listing every Revit API member you used that is NOT in a known-good script (compile risk), or
-  "new_api: none".
-- Known API facts: TransformWithBoundary has GetModelToProjectionTransform() (no GetTransform()); for
-  NewTransitionFitting pass the PIPE connector first (a family connector first fails "owner should be flex duct or
-  pipe"); a plumb branch off a 1/4 in/ft sloped pipe fails NewTeeFitting/NewTakeoffFitting angle checks: place the
-  tee family manually, BreakCurve, ConnectTo; ElementId(long) / .Value on Revit 2024.
-- Never hard-code a level, view or type NAME copied from another model (Pad 10's "PLUMBING - WV - FLOOR PLAN" is
-  not in Pad 11): resolve levels by elevation and types by family + type name found in THIS model, and abort in
-  preflight if not found. Firm-template system types can carry odd classifications (storm types classed
-  SupplyHydronic): match system types by name as well as classification.
-- Safety guards that compare before/after counts must exclude the ids the task deliberately deletes.
-- Keep every return under ~3 KB: the bridge truncates longer returns and the writer loses the tail. Put long lists
-  as counts plus first N ids.
-- FormattedText has no Replace(): edit TextNote text with GetFormattedText(), find the index, then
-  SetPlainText(new TextRange(start, len), newText) and SetFormattedText (keeps the formatting).
-- New elements land on the ACTIVE workset. In the creating script set ELEM_PARTITION_PARAM on every new element to
-  the workset of the elements it extends (storm piping = STORM), resolved by name in THIS model. Preflight checks each
-  target view's range (cut/bottom/depth vs the new elements' elevations) and the workset's visibility in that view,
-  and expected.json gets one "visible in view <name>" item per target view, not just "exists" (R22).
-
-## Pad 11 lessons (Bakersfield 26032, 2026-11-02; swarm/LESSONS.md R23-R27)
-- Rotating a plan view: setting View.CropBox with a rotated transform does NOT rotate the view (RightDirection stays
-  +X, and the script deleted and recreated the clouds anyway). Rotate the crop region element (category Element,
-  same name as the view; verify it in preflight) with ElementTransformUtils.RotateElement about a vertical axis
-  through the crop center, with CropBoxVisible temporarily on. Keep the viewport box centre on the sheet unchanged.
-  Before rotating, record each plan cloud's corners in MODEL coordinates; after, map them back to sheet coordinates
-  and recreate each cloud clockwise with a new delta tag. expected.json checks RightDirection.
-- After a 180 deg view rotation, check every keynote diamond and tag reads upright: diamonds need HandOrientation
-  -X in a 180-rotated view (a "6" read as "9"). Report and flip the +X ones in the same batch.
-- Revit revision cloud + delta tag (Jeremy standard): one "Revision Tag" per cloud, head at (cloud right edge
-  - 0.17 in, cloud top + 0.08 in) paper, so the tag's bottom touches the top line outside the cloud. A new cloud and
-  its tag box must not touch or overlap another cloud and must not cut a text line or a tag: grow it to enclose the
-  text, or merge touching clouds into ONE rectilinear outline cloud with one delta (T10 "outline"). Cloud only
-  changed items; use the revision named in the task.
-- Elements returned by Connector.Owner become invalid after a delete in the same transaction: keep ElementIds and
-  re-fetch with doc.GetElement. The API has no spot slope (manual list). Spot elevations work:
-  NewSpotElevation with Reference.ParseFromStableRepresentation(doc, pipe.UniqueId + ":9:LINEAR"), then set
-  "Display Elevations" = Bottom.
-- Moving a tag/keynote/note off a clash: try both axes and take the smallest move that clears everything, and cap
-  the move (default 6 ft model / 1 in paper); over the cap, abort that item and report it (T10b chose a 13 ft move
-  along the long axis when 1.6 ft up was clear).
-- Section/elevation heads whose view is on no sheet: hide them in the plumbing sheet views (they print as blank
-  heads). Never delete the section.
-
-## Revit lessons (Garden 25-088; swarm/LESSONS.md)
-- Creating tags with leaders runs at about 1 tag/s; more than ~100 tags in one call passes the 300 s bridge timeout
-  (the transaction still commits). If a task would create more, say so in your reply so it is split (2-3 views each).
-- Tags placed in a dependent view belong to its parent and show in every dependent: tag through one view per parent
-  and dedupe by distance (<= 2 ft), never by rounded coordinates (rounding to 1 ft made 131 duplicates).
-- Locate targets by their exact current text/value, check the old value before changing it, and throw (rolling back
-  the whole batch) on any mismatch. Never address schedule rows or cells by index: rows shift.
-- The API cannot retarget view references or match lines, edit tag label formats, or set general Project Units
-  accuracy other than 1E-06. Do not attempt these; reply "manual: <what>" so they go on Jeremy's worklist.
-- Before any model-wide change (project units, a system type, a shared type), the task must cite a read-only side
-  effect scan (0-decimal units would have misreported fractional WSFU 0.75/1.125/2.5 in 185 schedules). Stacked or
-  odd tag labels usually come from the tag type's Yes/No label switches: fix by type parameter, not a new family.
-- "Computed" values (DFU/FU, flow) settle only after commit. Never put a count or value the script computed inside
-  its own transaction into expected.json; write the check and let the verifier read the settled value.
-- Export/print by sheet number, never by sheet name (duplicate names overwrote each other's PDFs).
-
-## AutoCAD lessons (Northgate 23-082; swarm/LESSONS.md)
-- Keep every call the writer makes short (under ~600 characters): put the logic in the .lsp, expose short
-  (c:...) commands. Count parens before you finish: an unbalanced file fails to load.
-- Target documents by name and make sure the target is the active document before ActiveX work (a plot-device change
-  on an inactive document hung AutoCAD). Never loop over all open documents in one call.
-- Snaps: Jeremy runs OSMODE 16383. Build geometry with entmake/ActiveX, or pass points with "_non" (or OSMODE 0,
-  restored after). Bring new wipeouts to the top of the draw order over PDF underlays.
-- Plotting: -PLOT, PlotToFile and the bridge's plot_pdf fail (Northgate). -PUBLISH of a DSD sheet list WORKS
-  (22-001, 2026-11-03): (command "_.-PUBLISH" dsd) with BACKGROUNDPLOT 0, FILEDIA 0, CMDDIA 0 (restore all three),
-  DSD PromptForDwfName=FALSE, Setup= (layout page setup), output in [Target] DWF=/OUT=. Refuse to overwrite an
-  existing output. Template: 22-001 pc9-check/cad/pc9publish.lsp + PC9_replot.dsd. Default the output to a test
-  folder under the swarm run (QA it before anything goes to L:; local output also avoids the shared-drive
-  permission block). An open drawing with unsaved edits publishes in its current in-memory state, no prompt.
-- AutoLISP is not Common Lisp: there is no fboundp or identity (use (type sym), (lambda (x) x)). MTEXT has no
-  ActiveX Explode (vla-explode fails silently): explode a temp copy with (command "_.EXPLODE" e), clear
-  CMDACTIVE, and entdel only enames whose entget is non-nil (entdel on a deleted ename restores it).
-- Cloud geometry: find, check and size clouds by their VERTEX bbox (min/max of group 10). vla-GetBoundingBox adds
-  the arc bulge (~0.03-0.04 in at chord 0.14, bulge 0.52) and made a position check abort (22-001 P3FIX). Keep the
-  arcs clear of neighbouring text: sagitta = |bulge| x chord / 2.
-- Embedded Excel (OLE2FRAME) shows a FIXED window of the workbook. Rows written below it are clipped and the
-  frame does not grow (22-001 sheet index). Plan row height/font changes or a frame resize, and test-plot.
-- Annotative MLEADERs and text keep one position per annotation scale. A move must fix every scale context (set
-  CANNOTATIONSCALE to each, then set the vertices), not only the current one; the CLEAN command must restore every
-  context too, and expected.json needs an item per scale.
-- VPLAYER "_All" freezes in every viewport in the DWG; use "_Select" with the viewport ename. Per-viewport frozen
-  layers are in the viewport's ACAD xdata (1003 codes), not DXF 341.
-- Title blocks are not always at 0,0: place title-block text relative to each layout's title block insertion point.
-- Revision clouds: copy an existing cloud, delta and MTEXT and move them. If one must be drawn, go clockwise
-  (BL > TL > TR > BR) and size it from measured geometry, never an estimate.
-- Placing tags/text: try candidate positions and abort that item (not the batch) on a clash with text or a pipe;
-  return the aborted items instead of forcing an overlap.
-- A changed label that has an iso copy (separate iso text layer) must change in both places; add an expected.json
-  item for each copy.
-- Rerouting a branch to another system: also delete the old wye/stub where it joined the old main.
+- Every Revit type and member the script uses must be confirmed in the `revit-api` skill (load it with the Skill
+  tool; check C:/Users/Jeremy/.claude/skills/revit-api/references/core.md first, then INDEX.md and the topic file).
+  Never use a member it does not list. In your reply add "api_checked: <n> found, 0 not found" and a line
+  "members: Type.Member, ..." listing every Revit member used, so the orchestrator can run
+  revit-api/scripts/revit_api_check.py on them. Reusing calls from scripts that already ran OK on this bridge is still
+  good practice (e.g. swarm/26032_mcg_rosedale_bakersfield_ca_P2679/pad11-1102/tasks/T1.cs, T8a.cs, T8a2.cs).
+## Lessons (in the skills since 2026-11-05)
+- Revit: read C:/Users/Jeremy/.claude/skills/revit-conventions/references/scripting-lessons.md before writing or
+  fixing any .cs (API facts, naming, worksets, return size, Pad 11 and Garden lessons).
+- AutoCAD: read C:/Users/Jeremy/.claude/skills/acad-conventions/references/scripting-lessons.md before any .lsp
+  (payload size, snaps, publishing, AutoLISP gaps, cloud bbox, annotative scales, OLE window).
 
 ## Fixing a failed script (fix mode; swarm/LESSONS.md R28)
 The orchestrator runs you in fix mode on opus only after script-debugger has failed twice on the same task. It

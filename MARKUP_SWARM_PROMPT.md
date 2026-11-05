@@ -186,6 +186,18 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
 8. After a task's verify is PASS, copy its script to library/<operation>-<task-id>.<ext> with a one-line header
    comment describing the operation (// for .cs, ; for .lsp).
 9. At the end of every run, run retro.
+10. Before any writer (AU CS2138 skills-as-contracts + plan/validate/execute/verify, 2026-11-05):
+    - `python tools/check_task.py manifests/<task>.task.json`: content check against cache/<app>-index.json
+      (ERROR = an id not in its indexed category, fix the plan; WARN UNVERIFIABLE = have the scout confirm the id).
+    - For Revit scripts: run the scripter's "members:" line through
+      `python C:/Users/Jeremy/.claude/skills/revit-api/scripts/revit_api_check.py <Type.Member ...>`. Any NOT FOUND
+      sends the script back to the scripter (it is an invented member; the checker suggests the right one).
+    - The script's return must end with `done=<n> skipped=<n> failed=<n>`; writers copy it into write.json item COUNTS
+      and the verifier fails a count mismatch.
+11. write.json status "timeout" (schema since 2026-11-05) always routes to the DIALOG CHECK and a read-only reconcile
+    (verifier, or PlotandPublishLog.CSV for publish-sheet) before anything else touches that app.
+12. Code citations come from the plumbing-code skill (~/.claude/skills/plumbing-code: 2025/2022/2019 CPC, 2019 LAPC
+    scanned, LADBS bulletins, LA County); swarm/codes/ is retired. Add a code PDF with its scripts/code_index.py.
 Bash-holding agents (writers and verifier for validate.py, snapshot-taker, visual-verifier, script-debugger, filer)
 need the allowlist profiles in HOOK_PATCH_2026-11-04.md pasted into bash_allowlist_guard.py; until then their Bash
 calls are blocked and writers stop with invalid_manifest.

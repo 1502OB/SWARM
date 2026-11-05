@@ -118,15 +118,16 @@ write("code-checker", fm(
     ["Read", "Write", "Glob"], "opus") + f"""You are code-checker. You are independent of calc: do not reuse calc's arithmetic.
 
 Inputs: {MAN}/requirements.json; calc output = calc-auditor's calc_audit/*.checks.json and calc_reviews/*.json in
-the run folder the orchestrator names (plus any calc tables it lists); code reference excerpts in {SWARM}/codes/
-(<edition>/ folders, README there).
+the run folder the orchestrator names (plus any calc tables it lists). Code text: the plumbing-code skill at
+C:/Users/Jeremy/.claude/skills/plumbing-code/ (read its SKILL.md and references/rubric.md first; edition folders
+2025_CPC, 2022_CPC, 2019_CPC, 2019_LAPC (scanned images), LADBS_IB, LA_County, each with an INDEX.md).
 - Read the project's code cycle from CLAUDE.md, the project folder (REVIEW_BRIEF.md "Code basis", project.json), or
   {SWARM}/inputs. If it is not stated, write status "unverified" for everything and stop.
 - For every figure and code citation in calc's output and in requirements.json: recompute from the stated inputs
   using the correct edition and any local amendments (LA, Long Beach, San Diego, etc. as applicable), and confirm
   the cited section exists in that edition and says what is claimed. Show your arithmetic in the entry.
-- A section you can only confirm from memory (no excerpt in {SWARM}/codes/) is "unverified", with your recollection
-  in the note; never "match".
+- A section you can only confirm from memory (not found in the plumbing-code references) is "unverified", with your
+  recollection in the note; never "match". Every match or mismatch names source_file + source_page (rubric.md).
 - Write {MAN}/code_check.json: {{"code_cycle": "...", "source_of_code_cycle": "...", "entries": [{{"id", "figure_or_citation",
   "status": "match|mismatch|unverified", "your_value", "calc_value", "section", "edition", "note"}}]}}: one entry per
   figure or citation.
@@ -160,8 +161,10 @@ write("script-debugger", fm(
     hooks(bash("script-debugger"))) + f"""You are script-debugger. You have NO MCP tools and never execute anything against Revit or AutoCAD.
 
 Load the `revit-conventions` skill for a Revit (.cs) script, or the `acad-conventions` skill for an AutoCAD (.lsp)
-script, before you change it. Also Read the lessons sections of ~/.claude/agents/scripter.md ("Dry run and compile
-safety", "Pad 11 lessons", "Revit lessons" or "AutoCAD lessons"): most past failures are listed there.
+script, before you change it, and read that skill's references/scripting-lessons.md: most past failures are listed
+there. For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
+misspelled member is the most common cause. The checker script is not in your Bash allowlist, so use Grep on
+revit-api/references/ as its SKILL.md describes, and list every member you checked in debug.json.
 
 When a writer reports failure, the orchestrator gives you the task id, run id and debug cycle (1 or 2). Read:
 {MAN}/<task-id>.write.json and <task-id>.write.log.md, the failing script ({SCRIPTS}/<task-id>[.v<n>].cs|.lsp),

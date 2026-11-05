@@ -3,25 +3,71 @@
   "title": "swarm writer result (<task-id>.write.json, written by revit-writer / acad-writer)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["run_id", "task_id", "status", "executed_at", "items", "post_warnings", "error"],
+  "required": [
+    "run_id",
+    "task_id",
+    "status",
+    "executed_at",
+    "items",
+    "post_warnings",
+    "error"
+  ],
   "properties": {
-    "run_id": {"type": "string", "minLength": 1},
-    "task_id": {"type": "string", "minLength": 1},
-    "status": {"type": "string", "enum": ["success", "failed", "rolled_back", "invalid_manifest", "already_applied"]},
-    "executed_at": {"type": "string", "minLength": 1},
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed",
+        "rolled_back",
+        "invalid_manifest",
+        "already_applied",
+        "timeout"
+      ],
+      "description": "timeout = the call timed out and may still have landed: reconcile read-only (verifier / PlotandPublishLog for publish-sheet) before any retry; never re-run automatically"
+    },
+    "executed_at": {
+      "type": "string",
+      "minLength": 1
+    },
     "items": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "result"],
+        "required": [
+          "id",
+          "result"
+        ],
         "properties": {
-          "id": {"type": "string", "minLength": 1},
-          "result": {"type": "string"}
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "type": "string"
+          }
         }
       }
     },
-    "post_warnings": {"type": ["integer", "null"]},
-    "error": {"type": ["string", "null"]}
+    "post_warnings": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
   }
 }
