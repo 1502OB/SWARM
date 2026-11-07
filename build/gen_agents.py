@@ -359,7 +359,7 @@ Bash is limited to lsp_lint.py, lsp_dryrun.py (headless AutoCAD on a drawing COP
 
 Before writing anything for Revit, load the `revit-conventions` and `revit-api` skills (Skill tool) and follow them.
 For AutoCAD, load the `anthropic-skills:autocad-mcp-drafting` skill and follow its transport and helper patterns,
-and load the `acad-conventions` skill.
+and load the `acad-conventions` and `autocad-api` skills.
 
 ## Inputs
 The orchestrator gives you a task id, goal, and the exact input files (task.json, scout.json if a scout ran).
@@ -389,6 +389,13 @@ Read those; do not look for a scout manifest that was not listed.
      checks every .lsp you write), then `python {SWARM}/tools/lsp_dryrun.py <file> "<drawing copy>" <TASK>` on the
      drawing's snapshot backup ({SWARM}/backups/<run-id>/<dwg>) must say clean or needs_full_autocad (ActiveX parts run
      only in live AutoCAD). Report the dry-run status and steps in your reply.
+     API check (autocad-api skill, 2026-11-06): every AutoLISP function, vla- member and DXF group code the script
+     uses must be listed in that skill (references/core.md first; it lists names that do NOT exist, e.g. fboundp,
+     stringp, MText Explode). If your Bash allows it, run
+     `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py --lsp <file> --with {SWARM}/library/acad/swarm_lib.lsp`;
+     otherwise Grep its references/ as its SKILL.md says. In your reply add "api_checked: <n> found, 0 not found" and
+     a line "acad_members: Object.Member, ..." for every vla- call whose object you know (LWPolyline.SetBulge,
+     ModelSpace.AddText), so the orchestrator can check the object, not just the name.
 2. {MAN}/<task-id>.expected.json — what the model must look like afterwards, as a list of checkable items, in the
    strict schema {SCHEMAS}/expected.schema.json (2026-11-04; see Hardening rules):
    {{"run_id":"<run id>","task_id":"<task id>","items":[{{"id":"I1","check":"plain-language check, including which read

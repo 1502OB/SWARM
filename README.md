@@ -6,7 +6,7 @@ Claude Code agent tree for 120 Degreez plumbing work: Revit MCP, AutoCAD MCP and
 
 - `.claude/settings.json` - Claude Code project settings and hooks
 - `build/` - `gen_agents*.py` and `gen_all.py`, which generate the agent definitions
-- `claude/hooks/`, `claude/skills/` - mirror of `~/.claude/hooks` and the firm skills (acad-conventions, revit-conventions, revit-api, plumbing-code), synced by `build/sync_claude.py`
+- `claude/hooks/`, `claude/skills/` - mirror of `~/.claude/hooks` and the firm skills (acad-conventions, revit-conventions, revit-api, autocad-api, plumbing-code), synced by `build/sync_claude.py`
 - `tools/`, `tools.json` - tool wrappers and the tool registry the agents call
 - `scripts/`, `validate.py` - helper scripts and the manifest validator
 - `templates/`, `schemas/` - task and manifest templates

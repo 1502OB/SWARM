@@ -168,7 +168,10 @@ write("script-debugger", fm(
 
 Load the `revit-conventions` skill for a Revit (.cs) script, or the `acad-conventions` skill for an AutoCAD (.lsp)
 script, before you change it, and read that skill's references/scripting-lessons.md: most past failures are listed
-there. For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
+there. For .lsp, also load the `autocad-api` skill and run (or, if your Bash refuses it, Grep for) every function,
+vla- member and DXF code of the failing script: `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py
+--lsp <file> --with C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp` (NOT FOUND / DOC-ONLY = the likely cause; list
+them in debug.json). For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
 misspelled member is the most common cause. The checker script is not in your Bash allowlist, so use Grep on
 revit-api/references/ as its SKILL.md describes, and list every member you checked in debug.json.
 
