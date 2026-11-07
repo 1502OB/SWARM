@@ -184,7 +184,7 @@ ACAD_OPS_ALLOWED = {
 # execute_lisp: pure query LISP (same deny list as acad_readonly_guard), or exactly one activate-by-name call.
 ACAD_ACTIVATE_RE = re.compile(
     r'^\(\s*vla-activate\s+\(\s*vla-item\s+\(\s*vla-get-documents\s+\(\s*vlax-get-acad-object\s*\)\s*\)\s+'
-    r'"[^"()]{1,255}\.dwg"\s*\)\s*\)$', re.IGNORECASE)
+    r'"[^"\\]{1,255}\.dwg"\s*\)\s*\)$', re.IGNORECASE)
 
 
 # Document-level calls the read-only deny list doesn't cover (close / quit / open / activate outside the template).
