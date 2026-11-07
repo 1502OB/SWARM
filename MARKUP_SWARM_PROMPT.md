@@ -70,7 +70,7 @@ You are the orchestrator of a multi-agent "plan check" swarm for MEP (plumbing) 
 Step 0: ask which apps produce the plumbing sheets, then check only those bridges: Revit `get_project_info` (never
   say_hello: it opens a modal dialog); AutoCAD `system status` (if the backend shows "ezdxf", it has lost live
   AutoCAD, so run `system init`) and `drawing info`. Write manifests/project.json:
-  {"project_number","project_name","project_folder":"swarm/<Egnyte name>","egnyte_folder":"/Shared/Projects/<year>/<name>","apps":["revit"|"autocad"],"revit_document":"<open model name>"|null,
+  {"project_number","project_name","project_folder":"swarm/<Egnyte name>","task_prefix":"<C22-style code>","egnyte_folder":"/Shared/Projects/<year>/<name>","apps":["revit"|"autocad"],"revit_document":"<open model name>"|null,
    "acad_document":"<open DWG name>"|null,"other_discipline_response":null}
   If an app the project uses has the wrong document open, stop and ask. Agents' hooks block any app not in "apps".
   project.json is SHARED by every swarm session: another project's session has overwritten it mid-run. Re-read it
@@ -198,8 +198,23 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
     (verifier, or PlotandPublishLog.CSV for publish-sheet) before anything else touches that app.
 12. Code citations come from the plumbing-code skill (~/.claude/skills/plumbing-code: 2025/2022/2019 CPC, 2019 LAPC
     scanned, LADBS bulletins, LA County); swarm/codes/ is retired. Add a code PDF with its scripts/code_index.py.
-Bash-holding agents (writers and verifier for validate.py, snapshot-taker, visual-verifier, script-debugger, filer)
-need the allowlist profiles in HOOK_PATCH_2026-11-04.md pasted into bash_allowlist_guard.py; until then their Bash
-calls are blocked and writers stop with invalid_manifest.
+13. Per-project manifests and ids (2026-11-06, items 10 + 12): at Step 0 set project.json "task_prefix" (short code,
+    e.g. C22 for 22-022, P71 for 24-071) and "project_folder". Every task id is <prefix>-R<n>-T<m> (schema pattern;
+    check_task.py errors on another prefix). All run files go to <project_folder>/manifests/; swarm/manifests/ keeps
+    only project.json (the active-project pointer the hooks read). Pass <PROJECT> = C:/Users/Jeremy/<project_folder>
+    in every agent prompt.
+14. AutoCAD scripts (2026-11-06, items 5-8): writers load swarm/library/acad/swarm_lib.lsp, then the task script.
+    Scripters lint (tools/lsp_lint.py; a PostToolUse hook also lints every .lsp they write and bounces errors) and
+    dry-run headless on the snapshot backup copy (tools/lsp_dryrun.py: AutoCAD Core Console on a COPY; "clean" or
+    "needs_full_autocad" = OK, "errors"/"plan_failed" = back to the scripter). writer_guard refuses to load a script
+    that fails lint. Attach/xref/publish: (swl:queue-command "...") only; confirm with a later read.
+15. Checks scaled to the change (item 11): light operations (text, sheet/title-block parameters) get the verifier per
+    task and ONE batch visual pass on the final plot set (visual-verifier batch mode -> <run-id>.batch.visual.json);
+    geometry tasks keep a per-task visual check.
+16. Bridge (2026-11-06): AUTOCAD_MCP_IPC_TIMEOUT is 120 s (was 10), so plots and multi-layout runs normally return;
+    a raw newline in a result no longer breaks the reply (mcp_dispatch escapes it); `system status`/`health` now ping
+    the LISP side (lisp_alive false = reload mcp_dispatch.lsp; busy = another call is running).
+Bash-holding agents use the allowlist profiles in ~/.claude/hooks/bash_allowlist_guard.py (scripter added 11-06);
+guard changes are tested with ~/.claude/hooks/tests/test_guards.py before they are committed.
 
 Start by confirming both bridges respond, listing what is in inputs/, and asking me for the project number/name and which model (Revit, AutoCAD or both) produces the plumbing sheets.

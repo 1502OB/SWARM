@@ -39,8 +39,12 @@ PROFILES = {
     "swarm-validate": [script(HOME + r"/swarm/validate\.py")],
     "snapshot-taker": [script(HOME + r"/swarm/tools/snapshot_backup\.py")],
     "visual-verifier": [script(HOME + r"/swarm/tools/visual_crop\.py")],
-    "script-debugger": [script(HOME + r"/swarm/tools/lspcheck\.py"), script(HOME + r"/swarm/validate\.py")],
+    "script-debugger": [script(HOME + r"/swarm/tools/lspcheck\.py"), script(HOME + r"/swarm/validate\.py"),
+                        script(HOME + r"/swarm/tools/lsp_lint\.py"), script(HOME + r"/swarm/tools/lsp_dryrun\.py")],
     "filer": [script(HOME + r"/swarm/tools/file_deliverable\.py")],
+    # 2026-11-06: scripter checks its own AutoLISP before handing it back (lint + headless dry run on a drawing copy)
+    "scripter": [script(HOME + r"/swarm/tools/lsp_lint\.py"), script(HOME + r"/swarm/tools/lsp_dryrun\.py"),
+                 script(HOME + r"/swarm/validate\.py")],
 }
 SHEET = "python .../swarm/tools/sheet_tool.py"
 
@@ -73,8 +77,10 @@ def main():
         "swarm-validate": "python .../swarm/validate.py <schema> <file>",
         "snapshot-taker": "python .../swarm/tools/snapshot_backup.py <run-id> <file> [<file> ...]",
         "visual-verifier": "python .../swarm/tools/visual_crop.py <pdf> <page> <x0,y0,x1,y1> <task-id> [--units in]",
-        "script-debugger": "python .../swarm/tools/lspcheck.py <file.lsp>, or python .../swarm/validate.py <schema> <file>",
+        "script-debugger": "python .../swarm/tools/lspcheck.py | lsp_lint.py <file.lsp>, lsp_dryrun.py <lsp> <dwg> <TASK>, or python .../swarm/validate.py <schema> <file>",
         "filer": "python .../swarm/tools/file_deliverable.py <source> <destination folder> <new name> <project>",
+        "scripter": "python .../swarm/tools/lsp_lint.py <file.lsp>, python .../swarm/tools/lsp_dryrun.py <script.lsp> "
+                    "<drawing.dwg> <TASK> [--run], or python .../swarm/validate.py <schema> <file>",
     }.get(profile, "nothing (no help text for this profile)")
     block(f"{profile} may only run: {allowed}. One command per call, no chaining, pipes, redirects or $(). "
           "Read JSON with the Read tool.")

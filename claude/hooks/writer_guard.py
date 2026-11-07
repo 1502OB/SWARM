@@ -14,6 +14,12 @@
    for DWGs listed in swarm/locks/acad_open_approved.txt (exact file, or folder entry ending in '/'), switching the
    active drawing (one vla-activate call), in-place save, info/status/init, query LISP. Entity edits, save-as,
    close, quit and purge blocked. Same acad.lock as the writer.
+5. (2026-11-06) Patterns are matched against code with C# string literals and comments removed (a text note
+   "CLOSE TO WALL" or a comment "Audit" is not a call), and the AutoCAD save/close check only reads the command
+   strings sent with (command ...), vl-cmdf and vla-SendCommand (a label "EXIT" is not a command). Queued
+   commands: vla-SendCommand / vla-PostCommand (raw or through swl:queue-command in the shared library) may send
+   only the commands in QUEUE_ALLOWED; reflection that can reach blocked members (GetMethod, InvokeMember) is
+   blocked. Tests: hooks/tests/test_guards.py.
 Exit code 2 blocks the call and feeds stderr back to the agent.
 """
 import json
@@ -22,7 +28,14 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from guardlib import lisp_command_strings, strip_cs, strip_lisp_comments  # noqa: E402
+
 LOCKS = Path(os.environ.get("SWARM_LOCKS_DIR", "C:/Users/Jeremy/swarm/locks"))  # override for hook tests only
+SWARM_LIB = "C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp"  # shared AutoLISP library (wraps SendCommand)
+# Commands a writer may queue with vla-SendCommand (they cannot run inside the dispatcher's (command) context).
+QUEUE_ALLOWED = re.compile(r"^\s*_?\.?-?(XREF|PDFATTACH|IMAGE|IMAGEATTACH|PUBLISH|REGENALL)\b", re.IGNORECASE)
+REFLECTION_DENY = re.compile(r"\b(GetMethod|InvokeMember)\b")
 
 # Jeremy, 2026-11-02 (split): revit-writer = model edits in transactions + switching to an already-open model.
 # File operations (save / save-as / sync / relinquish / close / detach / audit / open) belong to revit-ops only.
@@ -73,11 +86,12 @@ def revit_open_problem(code):
             f"adds the approved path to {OPEN_APPROVALS.as_posix()} after he approves it")
 # In-place saves are allowed (Jeremy, 2026-10-21): vla-Save in LISP, and drawing.save with no path.
 # Save-as, close, quit, open and purge stay blocked.
-ACAD_DENY = re.compile(
-    r'"_?\.?(QSAVE|SAVE|SAVEAS|SAVEALL|CLOSE|CLOSEALL|QUIT|EXIT|WBLOCK|ETRANSMIT)"'
-    r"|\bvla-(SaveAs|Close)\b|\bvlax-invoke[^)]*'(SaveAs|Close)\b",
-    re.IGNORECASE,
-)
+# A command string (first token) that saves-as / closes / quits; checked only on real command strings.
+ACAD_DENY_CMD = re.compile(r"^\s*_?\.?(QSAVE|SAVE|SAVEAS|SAVEALL|CLOSE|CLOSEALL|QUIT|EXIT|WBLOCK|ETRANSMIT)\b",
+                           re.IGNORECASE)
+# ActiveX calls that save-as / close (checked on code with ; comments removed).
+ACAD_DENY = re.compile(r"\bvla-(SaveAs|Close)\b|\bvlax-invoke[^)]*'(SaveAs|Close)\b", re.IGNORECASE)
+QUEUE_CALL = re.compile(r'\(\s*swl:queue-command\s+"((?:\\.|[^"\\])*)"', re.IGNORECASE)
 ACAD_DRAWING_DENY = re.compile(r"save|close|open|new|quit|purge", re.IGNORECASE)
 LOAD_RE = re.compile(r'\(\s*load\s+"([^"]+)"', re.IGNORECASE)
 
@@ -119,7 +133,8 @@ def main():
 
     if app == "revit" and tool == prefix + "send_code_to_revit":
         code = str(ti.get("code", ""))
-        m = REVIT_DENY.search(code)
+        bare = strip_cs(code)
+        m = REVIT_DENY.search(bare) or REFLECTION_DENY.search(bare)
         if m:
             block(f"code references '{m.group(1)}'; revit-writer only edits the model in transactions. Save, sync, "
                   "relinquish, close, detach, audit and opening files belong to the revit-ops agent")
@@ -141,11 +156,73 @@ def main():
                     texts.append((f, Path(f).read_text(encoding="utf-8", errors="replace")))
                 except OSError:
                     block(f"cannot read '{f}' to check it; load only scripts under swarm/scripts")
+                why = lint_problem(f)
+                if why:
+                    block(why)
             for where, text in texts:
-                m = ACAD_DENY.search(text)
-                if m:
-                    block(f"{where} contains '{m.group(0)}'; writers never save, close or quit the DWG")
+                why = acad_text_problem(text, is_library=Path(where).as_posix().lower() == SWARM_LIB.lower())
+                if why:
+                    block(f"{where}: {why}")
     sys.exit(0)
+
+
+def lint_problem(path):
+    """None if swarm/tools/lsp_lint.py finds no errors in the .lsp about to be loaded (or cannot run), else why."""
+    if not path.lower().endswith(".lsp"):
+        return None
+    try:
+        sys.path.insert(0, "C:/Users/Jeremy/swarm/tools")
+        from lsp_lint import lint  # noqa: E402
+        errors, _warnings = lint(path)
+    except Exception:
+        return None  # the linter failing must not stop a run; the other checks still apply
+    if errors:
+        first = "; ".join(f"{c} line {l}: {m}" for c, l, m in errors[:3])
+        return (f"{Path(path).name} fails lsp_lint ({len(errors)} error(s): {first}); send it back to the scripter "
+                "(python C:/Users/Jeremy/swarm/tools/lsp_lint.py <file> shows all)")
+    return None
+
+
+def acad_text_problem(text, is_library=False):
+    """None if the LISP text only edits the drawing; else why it is blocked (save-as/close/quit, unsanctioned
+    queued command). The shared library itself wraps vla-SendCommand with a variable, so it is exempt from the
+    literal check; scripts must call swl:queue-command with a literal allowed command."""
+    bare = strip_lisp_comments(text)
+    m = ACAD_DENY.search(bare)
+    if m:
+        return f"contains '{m.group(0)}'; writers never save-as, close or quit the DWG"
+    for cmd in lisp_command_strings(text):
+        if cmd != "<dynamic>" and ACAD_DENY_CMD.match(cmd):
+            return f"sends the command '{cmd.strip()[:40]}'; writers never save-as, close or quit the DWG"
+    if not is_library:
+        for cmd, _kind in _send_texts(bare):
+            if cmd == "<dynamic>" or not QUEUE_ALLOWED.match(cmd):
+                return (f"queues '{cmd[:40]}' with vla-SendCommand/PostCommand; only XREF, PDFATTACH, IMAGE, PUBLISH, "
+                        "REGENALL may be queued, as a literal string (use swl:queue-command from the shared library)")
+    for cmd in QUEUE_CALL.findall(bare):
+        if not QUEUE_ALLOWED.match(cmd):
+            return f"swl:queue-command '{cmd[:40]}' is not an allowed queued command (XREF, PDFATTACH, IMAGE, PUBLISH, REGENALL)"
+    if not is_library and re.search(r"\(\s*swl:queue-command\s+[^\"\s]", bare, re.I):
+        return "swl:queue-command needs a literal command string, so the guard can check it"
+    return None
+
+
+def _send_texts(bare):
+    """(text, kind) for each vla-SendCommand / vla-PostCommand in the code (text '<dynamic>' if not a literal)."""
+    from guardlib import SEND_CALL, _skip_form
+    out = []
+    for m in SEND_CALL.finditer(bare):
+        j = _skip_form(bare, m.end())
+        while j < len(bare) and bare[j].isspace():
+            j += 1
+        if j < len(bare) and bare[j] == '"':
+            k = j + 1
+            while k < len(bare) and bare[k] != '"':
+                k += 2 if bare[k] == "\\" else 1
+            out.append((bare[j + 1:k], "literal"))
+        else:
+            out.append(("<dynamic>", "dynamic"))
+    return out
 
 
 def ops_main():
@@ -165,7 +242,7 @@ def ops_main():
     if ti.get("transactionMode") != "none":
         block('revit-ops must use transactionMode "none" (no model edits)')
     code = str(ti.get("code", ""))
-    m = OPS_DENY.search(code)
+    m = OPS_DENY.search(strip_cs(code)) or REFLECTION_DENY.search(strip_cs(code))
     if m:
         block(f"code references '{m.group(0).strip()}'; revit-ops never edits the model (that is revit-writer's job)")
     why = revit_open_problem(code)

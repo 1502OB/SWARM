@@ -8,7 +8,9 @@ from pathlib import Path
 HOME = Path.home()
 AGENTS = HOME / ".claude" / "agents"
 SWARM = "C:/Users/Jeremy/swarm"
-MAN = f"{SWARM}/manifests"
+POINTER = f"{SWARM}/manifests/project.json"  # active-project pointer (hooks read it)
+# 2026-11-06 (item 12): each project keeps its own manifests; <PROJECT> is explained in COMMON
+MAN = "<PROJECT>/manifests"
 SCRIPTS = f"{SWARM}/scripts"
 LOCKS = f"{SWARM}/locks"
 PY = "python C:/Users/Jeremy/.claude/hooks"
@@ -133,8 +135,11 @@ Never loop over every parameter of every element (a ~100k-element scan crashed R
 REVIT_CODE_READ = ("mcp__revit-mcp__send_code_to_revit", "revit_readonly_code_guard.py")
 REVIT_SCOUT_HOOK = hooks(PROJECT_GUARD, REVIT_CODE_READ)
 
-COMMON = f"""Paths: manifests live in {MAN}/, scripts in {SCRIPTS}/, writer locks in {LOCKS}/.
-Project: {MAN}/project.json lists the apps this project uses and the expected document per app. Only call apps it
+COMMON = f"""Paths: <PROJECT> = C:/Users/Jeremy/{{project_folder}} from {POINTER} (e.g. C:/Users/Jeremy/swarm/22-022 Carmel PCH
+Apartments (Long Beach, CA)); the orchestrator also names it in your prompt. Manifests live in {MAN}/ (per project since
+2026-11-06; never write task files to swarm/manifests/ except project.json), scripts in {SCRIPTS}/, writer locks in
+{LOCKS}/.
+Project: {POINTER} lists the apps this project uses and the expected document per app. Only call apps it
 lists (a guard hook blocks the others). Check the open document name on your first call to each app; if it is not
 the expected one, stop and report "wrong document open: <name>". If your prompt names the expected document (e.g.
 "document.Title must contain Pad11-P"), that overrides project.json: check the title and do not report the
@@ -246,6 +251,11 @@ HARDEN_VERIFIER = f"""## Hardening rules
 - If {MAN}/<task-id>.visual.json exists with status PASS or FAIL, a task passes only if BOTH this API check and the
   visual check report PASS. Otherwise (no visual.json, or status "unavailable") mark it "PASS_API_ONLY" and do not
   report it as a full PASS.
+- Light operations (2026-11-06, checks scaled to the change): edit-text-note, delete-text-note, edit-text,
+  set-sheet-parameter, set-title-block-text, set-parameter. They get no per-task visual check; one visual pass on the
+  batch's final plot set writes {MAN}/<run-id>.batch.visual.json. A light task is PASS when this API check passes and
+  that batch file is PASS for its sheet (list "sheets" inside it); before the batch file exists it is PASS_API_ONLY.
+  Geometry tasks (clouds, tags, moves, piping, viewports) keep their own <task-id>.visual.json.
 - verify.json gains "status": "PASS" | "PASS_API_ONLY" | "FAIL"; overall_pass is true only for "PASS".
 - Counts: from write.json you may also read the item with id "COUNTS". If done/skipped/failed differ from what
   expected.json implies (e.g. 44 sheets expected, done=40 skipped=4 when nothing was in the target state yet), the
@@ -343,7 +353,9 @@ Load the `acad-conventions` skill first (Skill tool).
 write("scripter", fm(
     "scripter",
     "Writes ONE batched script per task (C# for Revit send_code_to_revit, or .lsp for AutoCAD) plus an expected.json describing the post-state. Has no MCP access; never touches the models.",
-    ["Read", "Write", "Glob", "Grep", "Skill"], "sonnet") + f"""You are scripter. You write scripts; you never run them and have no MCP tools.
+    ["Read", "Write", "Glob", "Grep", "Bash", "Skill"], "sonnet",
+    hooks(("Bash", "bash_allowlist_guard.py scripter"))) + f"""You are scripter. You write scripts; you never run them against the live models and have no MCP tools.
+Bash is limited to lsp_lint.py, lsp_dryrun.py (headless AutoCAD on a drawing COPY) and validate.py.
 
 Before writing anything for Revit, load the `revit-conventions` and `revit-api` skills (Skill tool) and follow them.
 For AutoCAD, load the `anthropic-skills:autocad-mcp-drafting` skill and follow its transport and helper patterns,
@@ -361,10 +373,22 @@ Read those; do not look for a scout manifest that was not listed.
      hard-coded ElementId. Return a compact string/JSON of created element ids and key values.
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
-   - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-RUN) creates everything and returns a
-     short string of the new handles; (c:<TASK>-CLEAN) deletes exactly those entities (by handle, collect-then-delete)
-     and the layer it created, and returns counts. Use entmake with explicit layer (8) and space (67 0 = model).
+   - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
+     (c:<TASK>-RUN) creates everything and returns a short string of the new handles; (c:<TASK>-CLEAN) deletes
+     exactly those entities (by handle, collect-then-delete) and the layer it created, and returns counts;
+     (c:<TASK>-CHECK) read-only post check. Use entmake with explicit layer (8) and space (67 0 = model).
      Do not switch layouts, do not use (command) unless unavoidable, do not save.
+     Shared library (2026-11-06): the writer loads {SWARM}/library/acad/swarm_lib.lsp before your script. Call its
+     swl: helpers instead of writing your own (results: swl:result / swl:san - one line, no newlines; boxes, overlap,
+     crossing-aware clash swl:clash, viewport projection swl:vp / swl:ms->ps / swl:ps->ms, clockwise clouds
+     swl:cloudpts / swl:entmake-cloud / swl:cloud-check, live-value preflight swl:preflight, tag spots swl:best-spot).
+     Never redefine an swl: function. XREF / PDFATTACH / IMAGE attach and PUBLISH go through
+     (swl:queue-command "<literal command>"), never (command ...) (it cannot run them inside the dispatcher).
+     Prefix your own helpers with your task id (e.g. c22r8:) so two scripts never clash.
+     Before you hand an .lsp back: `python {SWARM}/tools/lsp_lint.py <file>` must report 0 errors (a hook also
+     checks every .lsp you write), then `python {SWARM}/tools/lsp_dryrun.py <file> "<drawing copy>" <TASK>` on the
+     drawing's snapshot backup ({SWARM}/backups/<run-id>/<dwg>) must say clean or needs_full_autocad (ActiveX parts run
+     only in live AutoCAD). Report the dry-run status and steps in your reply.
 2. {MAN}/<task-id>.expected.json — what the model must look like afterwards, as a list of checkable items, in the
    strict schema {SCHEMAS}/expected.schema.json (2026-11-04; see Hardening rules):
    {{"run_id":"<run id>","task_id":"<task id>","items":[{{"id":"I1","check":"plain-language check, including which read
@@ -519,7 +543,11 @@ Load the `anthropic-skills:autocad-mcp-drafting` skill first, then the `acad-con
 {WRITER_RULES.format(lock=LOCKS + "/acad.lock", man=MAN)}
 {harden_writer(LOCKS + "/acad.lock", 'the AutoCAD audit error count: one execute_lisp call running (command "_.AUDIT" "_N") (report only, fixes nothing) and reading the "errors found" number; if it cannot be read, post_warnings is null and the log says why')}
 ## AutoCAD specifics
-- Load with system execute_lisp: (load "{SCRIPTS}/<task-id>.lsp") — forward slashes only.
+- Load the shared library first, in its own call: (load "{SWARM}/library/acad/swarm_lib.lsp"), then the script:
+  (load "{SCRIPTS}/<task-id>.lsp") — forward slashes only. The guard refuses a script that fails lsp_lint.
+- Queued commands (attach, xref, publish) go through (swl:queue-command "..."): it returns "queued ..." at once and
+  the command runs after the dispatcher returns, so confirm the result with a later read (e.g. -CHECK) before logging
+  success.
 - Then run the named command in a separate short call, e.g. (c:T4-RUN). Keep each call short.
 - You may switch layouts with (setvar "CTAB" "<name>") when the work needs it; record the original CTAB and restore
   it before you finish, even on failure. Do not zoom. Do not save unless the task explicitly names drawings to save

@@ -1,6 +1,8 @@
 # ---- Project data: never in the repo (client drawings, markups, renders) ----
 2[0-9]-[0-9][0-9][0-9]_*/
 2[0-9][0-9][0-9][0-9]_*/
+2[0-9]-[0-9][0-9][0-9] */
+scratch/
 archive/
 backups/
 inputs/

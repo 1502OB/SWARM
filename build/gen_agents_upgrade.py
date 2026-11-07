@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from gen_agents import (  # noqa: E402
+    POINTER,
     ACAD_GUARD, ACAD_READ_OPS, COMMON, MAN, PROJECT_GUARD, REVIT_CODE_READ, REVIT_SERIAL,
     SCRIPTS, SNAP, SWARM, VALIDATE, fm, hooks, write,
 )
@@ -38,7 +39,7 @@ write("snapshot-taker", fm(
     hooks(PROJECT_GUARD, ACAD_GUARD, REVIT_CODE_READ, bash("snapshot-taker"))) + f"""You are snapshot-taker. You run first in every run, before any write. Load the `revit-conventions` skill
 before any Revit call and the `acad-conventions` skill before any AutoCAD call.
 
-The orchestrator gives you the run id (YYYYMMDD-HHMM). Only snapshot the apps {MAN}/project.json lists (a guard blocks
+The orchestrator gives you the run id (YYYYMMDD-HHMM). Only snapshot the apps {POINTER} lists (a guard blocks
 the others; write that app's section as null with "not used by this project").
 
 For the open Revit model and the open DWG:
@@ -79,6 +80,11 @@ write("visual-verifier", fm(
     hooks(PROJECT_GUARD, ACAD_GUARD, bash("visual-verifier"))) + f"""You are visual-verifier. You have not seen the work and must not look for it (no scripts, no write logs).
 The orchestrator runs you BEFORE verifier, so verifier can combine your result with its API check.
 
+Two modes (2026-11-06, checks scaled to the change):
+- per task (geometry tasks: clouds, tags, moves, piping, viewports): the steps below, one <task-id>.visual.json each;
+- batch (light text/parameter tasks, once at the end of the batch): the orchestrator gives the final plot set and the
+  light task ids per sheet; export/crop each sheet's changed text once and write {MAN}/<run-id>.batch.visual.json:
+  {{"run_id","status":"PASS|FAIL|unavailable","sheets":[{{"sheet","tasks":[...],"status","reason","crops":[...]}}]}}.
 For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status "success" (read only that field):
 1. Export the affected sheet(s) to PDF after the write.
    - Revit: {EXPORT} with format "PDF", the sheet id(s), paperSize "A0" (the largest the tool offers) and
@@ -188,7 +194,7 @@ write("filer", fm(
 
 - Naming: use the firm naming convention found in CLAUDE.md or .claude/skills (the plan-check-response-letter skill:
   "Plumbing_PCResponse Letter_MMDDYYYY.docx"). If none covers a file, stop and ask for that file's name.
-- Destination: the project folder path given in the run manifest ({MAN}/project.json project_folder, or the path
+- Destination: the project folder path given in the run manifest ({POINTER} project_folder, or the path
   the orchestrator names). L: is the Egnyte drive, so copying there uploads it.
 - Copy each file with one Bash command (the only one allowed):
   `python {TOOLS_DIR}/file_deliverable.py "<source under {SWARM}/output>" "<destination folder>" "<new name>" <project>`

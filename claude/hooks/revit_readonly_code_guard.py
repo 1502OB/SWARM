@@ -5,15 +5,22 @@ Transaction / SubTransaction / TransactionGroup usage. With no open transaction
 the Revit API itself throws on any attempt to modify the document, so the
 verifier can inspect geometry (e.g. revision cloud curves) without being able
 to change the model. Exit code 2 blocks the call.
+2026-11-06: the deny list is matched against the code with C# string literals and comments removed (a text note
+"CLOSE TO WALL" or a comment "Save the result" is not a call); reflection (GetMethod, InvokeMember) is blocked so a
+hidden member name in a string cannot reach a denied call. Tests: hooks/tests/test_guards.py.
 """
 import json
 import re
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from guardlib import strip_cs  # noqa: E402
 
 DENY = re.compile(
     r"\b(Transaction|SubTransaction|TransactionGroup|TransactionStatus|"
     r"Commit|RollBack|Save|SaveAs|SynchronizeWithCentral|Close|"
-    r"PostCommand|UIApplication|Process\.Start|File\.|Directory\.)\b"
+    r"PostCommand|UIApplication|Process\.Start|File\.|Directory\.|GetMethod|InvokeMember)\b"
 )
 
 
@@ -32,7 +39,7 @@ def main():
     ti = payload.get("tool_input") or {}
     if ti.get("transactionMode") != "none":
         block('set transactionMode to "none"; the verifier may only run read-only code')
-    m = DENY.search(str(ti.get("code", "")))
+    m = DENY.search(strip_cs(str(ti.get("code", ""))))
     if m:
         block(f"code references '{m.group(1)}'; read-only inspection code only")
     sys.exit(0)

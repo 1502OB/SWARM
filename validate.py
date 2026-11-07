@@ -4,9 +4,10 @@
 
 Exit 0 = valid, 1 = invalid (one line per error on stdout), 2 = usage error or unreadable JSON.
 Supports the subset the swarm schemas use: type (incl. lists like ["integer","null"]), enum, required,
-properties, additionalProperties: false, items, minItems, minLength. "{}" accepts any value.
+properties, additionalProperties: false, items, minItems, minLength, pattern. "{}" accepts any value.
 """
 import json
+import re
 import sys
 
 TYPES = {
@@ -31,6 +32,9 @@ def check(value, schema, path, errors):
         errors.append(f"{path}: {value!r} not one of {schema['enum']}")
     if isinstance(value, str) and len(value) < schema.get("minLength", 0):
         errors.append(f"{path}: shorter than {schema['minLength']} character(s)")
+    if isinstance(value, str) and "pattern" in schema and not re.search(schema["pattern"], value):
+        errors.append(f"{path}: {value!r} does not match {schema['pattern']}"
+                      + (f" ({schema['description']})" if schema.get("description") else ""))
     if isinstance(value, dict):
         props = schema.get("properties", {})
         for key in schema.get("required", []):

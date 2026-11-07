@@ -50,6 +50,18 @@ def flatten(index):
 def check(task_path):
     errors, warnings, found = [], [], []
     task = load(task_path)
+    # item 10 (2026-11-06): task ids carry the project's prefix, so two projects never share a manifest name
+    try:
+        proj = load(SWARM / "manifests" / "project.json")
+    except (OSError, ValueError):
+        proj = {}
+    want = proj.get("task_prefix")
+    tid = str(task.get("task_id", ""))
+    if want and not tid.startswith(want + "-"):
+        errors.append(f"task_id '{tid}' must start with '{want}-' (task_prefix of {proj.get('project_number', '?')} "
+                      "in swarm/manifests/project.json)")
+    elif not want:
+        warnings.append("project.json has no task_prefix: set it at Step 0 (e.g. C22) so task ids stay unique")
     app = task.get("app")
     idx_path = SWARM / "cache" / APP_INDEX.get(app, "?")
     if not idx_path.exists():

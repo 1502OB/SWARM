@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from gen_agents import (  # noqa: E402
+    POINTER,
     ACAD_GUARD, ACAD_GUARD_HOOK, ACAD_READ, ACAD_READ_OPS, COMMON, R, REVIT_CODE_READ, REVIT_SERIAL, MAN, PROJECT_GUARD, REVIT_READ, SWARM, fm, hooks,
     write,
 )
@@ -218,10 +219,11 @@ order), a section per requirement, an execution order section (batches that can 
 "Open questions" (one per item, addressed to a person, answerable yes/no or with a value).
 
 ## Task manifests (one per executable change)
-For every executable change also write {MAN}/<task-id>.task.json (task ids R<n>-T<m>, so each traces to its
+For every executable change also write {MAN}/<task-id>.task.json (task ids <prefix>-R<n>-T<m>, prefix = task_prefix in project.json, e.g. C22-R1-T1, so ids are unique per
+project and each traces to its
 requirement) in the strict schema {SWARM}/schemas/task.schema.json (2026-11-04; writers refuse anything else). The
 orchestrator gives you the run id. Exactly these keys:
-{{"run_id":"<run id>","task_id":"R1-T1","app":"revit|acad","operation":"<short operation type, e.g. add-revision-cloud,
+{{"run_id":"<run id>","task_id":"<prefix>-R1-T1","app":"revit|acad","operation":"<short operation type, e.g. add-revision-cloud,
 edit-text-note, resize-pipe, move-tag; scripter uses it to find library scripts>","target_ids":[<element ids or DWG
 handles>],"change":"<one self-contained paragraph: what, where (sheet, view/layout, view id or layer, grid/room),
 exact values, document name, revision sequence + description if any, depends on, batch>","source_requirement_id":
@@ -279,7 +281,7 @@ Never author the .docx by hand. Write the JSON input to {OUTPUT}/letter_input.js
 - One numbered response per reviewer comment, in the reviewer's order and numbering, comment quoted verbatim.
 - A response may say a change was made ONLY if every task for that requirement has overall_pass true in its
   verify.json (phase "build"). Then state the change and cite the sheet: "... See revised <thing> on Sheet <n>."
-- other_discipline requirements: use `other_discipline_response` from {MAN}/project.json verbatim. If it is missing,
+- other_discipline requirements: use `other_discipline_response` from {POINTER} verbatim. If it is missing,
   use "[PENDING - JEREMY TO REVIEW] approve the standard 'by other discipline' wording".
 - Otherwise the response is exactly "[PENDING - JEREMY TO REVIEW] <reason>", where reason is one of: verify FAIL
   (list the failed item ids), not executed / skipped, conflict (quote both positions briefly), needs_info (what is

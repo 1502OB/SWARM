@@ -8,6 +8,10 @@ agent read-only. Exit code 2 blocks the call and feeds stderr back to the agent.
 import json
 import re
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from guardlib import strip_lisp_comments  # noqa: E402
 
 READ_OPS = {
     "drawing": {"info", "get_variables"},
@@ -21,12 +25,17 @@ READ_OPS = {
 }
 
 # AutoLISP calls that can change the drawing, the session, or the filesystem.
+# 2026-11-06: vl-file-size / vl-file-directory-p / vl-file-systime are read-only and allowed (only delete, rename,
+# copy are denied); ActiveX methods that modify entities and command queueing (vla-SendCommand / PostCommand) are
+# denied (they were missing). ; comments are removed before matching. Tests: hooks/tests/test_guards.py.
 LISP_DENY = re.compile(
     r"\(\s*("
     r"entmake|entmakex|entmod|entdel|entupd|command|command-s|vl-cmdf|setvar|"
     r"load|startapp|open|write-line|write-char|eval|read|"
-    r"vl-file-\S+|vl-registry-write|vl-registry-delete|"
+    r"vl-file-(?:delete|rename|copy)|vl-mkdir|vl-registry-write|vl-registry-delete|"
     r"vla-put-\S+|vla-add\S*|vla-delete|vla-erase|vla-save\S*|vla-purge\S*|"
+    r"vla-sendcommand|vla-postcommand|vla-move|vla-copy|vla-rotate\S*|vla-mirror\S*|vla-scaleentity|"
+    r"vla-explode|vla-offset|vla-array\S*|vla-update|vla-regen|vla-import|vla-wblock|vla-export|vla-activate|"
     r"vlax-put\S*|vlax-invoke\S*|vlax-release-object|ssadd|ssdel|"
     r"vl-load-reactors|vlr-\S+|defun|defun-q"
     r")[\s()]",
@@ -67,7 +76,7 @@ def main():
             sys.exit(0)
         if "--allow-oleopen" in sys.argv and OLEOPEN_ONLY.match(code.strip()):
             sys.exit(0)
-        m = LISP_DENY.search(code + " ")
+        m = LISP_DENY.search(strip_lisp_comments(code) + " ")
         if m:
             block(f"execute_lisp contains '{m.group(1)}', which can modify the drawing; use pure query LISP only")
     sys.exit(0)

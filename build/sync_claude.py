@@ -4,7 +4,7 @@
     python ~/swarm/build/sync_claude.py pull      # ~/.claude -> repo/claude   (capture live edits, then commit)
     python ~/swarm/build/sync_claude.py install   # repo/claude -> ~/.claude   (fresh machine / after git pull)
 
-Synced: ~/.claude/hooks/*.py and the firm skills in SKILLS below. Agents are not copied: they are
+Synced: ~/.claude/hooks/**/*.py (incl. tests/) and the firm skills in SKILLS below. Agents are not copied: they are
 generated into ~/.claude/agents by build/gen_all.py. claude.ai-managed skills (skills/synced) are never touched.
 Never deletes anything on either side. A file that would be overwritten is first copied to
 build/backup_claude_<timestamp>/<side>/... (gitignored). plumbing-code page renders (*.png) stay local only:
@@ -34,7 +34,7 @@ def files(root: Path):
         base = root / sub
         if not base.exists():
             continue
-        pattern = "*.py" if sub == "hooks" else "**/*"
+        pattern = "**/*.py" if sub == "hooks" else "**/*"  # hooks/tests/*.py included (2026-11-06)
         for p in base.glob(pattern):
             rel = p.relative_to(root)
             if p.is_file() and not skip(rel):
