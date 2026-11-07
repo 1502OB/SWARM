@@ -18,6 +18,11 @@ rowfmt spec: {"sheet":"Sheet1","range":"A3:B119","row_height":12.75,"font_size":
 edits.json: {"edits":[{"sheet":"Sheet1","cell":"C5","from":77,"to":67}]}
   Every edit is checked BEFORE any change: the cell must exist, must not contain a formula, and its current
   value must equal "from" (numbers within 1e-9, text exact). If any check fails, nothing is changed.
+Formula edits (only with a human approval recorded in the file):
+  {"formula_approval":{"by":"Jeremy","when":"2026-11-06","task":"C22-R1-T1"},
+   "edits":[{"sheet":"Sheet1","cell":"D29","from_formula":"=48-(0-G29)*(-0.433)","formula":"=$D$28-(0-G29)*(-0.433)"}]}
+  The cell must hold a formula equal (case-sensitive) to from_formula; without formula_approval.by every formula
+  edit is refused. Formula edits are rolled back like values and listed in the output's formula_edits.
 "close keep" returns the edited workbook to AutoCAD (the OLE object updates); "close discard" abandons changes.
 Never saves anything to disk.
 #>
@@ -227,6 +232,15 @@ switch ($Mode) {
                 if ([string]$e.from_format -ne '*' -and [string]$c.NumberFormat -cne [string]$e.from_format) { $problems += "$($e.sheet)!$($e.cell): format '$($c.NumberFormat)' != expected '$($e.from_format)'"; continue }
                 $targets += , @($c, $e); continue
             }
+            if ($null -ne $e.formula) {
+                # formula edit: {sheet, cell, from_formula, formula}. Only with an explicit human approval recorded in
+                # the edits file (formula_approval.by), and only when the cell's current formula matches exactly.
+                if ($null -eq $spec.formula_approval -or [string]::IsNullOrWhiteSpace([string]$spec.formula_approval.by)) { $problems += "$($e.sheet)!$($e.cell): formula edit without formula_approval.by; refusing"; continue }
+                if (-not $c.HasFormula) { $problems += "$($e.sheet)!$($e.cell): has no formula (value '$($c.Value2)'); refusing formula edit"; continue }
+                if ([string]$c.Formula -cne [string]$e.from_formula) { $problems += "$($e.sheet)!$($e.cell): formula '$($c.Formula)' != expected '$($e.from_formula)'"; continue }
+                if (-not ([string]$e.formula).StartsWith('=')) { $problems += "$($e.sheet)!$($e.cell): new formula must start with '='"; continue }
+                $targets += , @($c, $e); continue
+            }
             if ($c.HasFormula) { $problems += "$($e.sheet)!$($e.cell): has formula $($c.Formula); refusing" ; continue }
             if (-not (Same $c.Value2 $e.from)) { $problems += "$($e.sheet)!$($e.cell): current '$($c.Value2)' != expected '$($e.from)'"; continue }
             $targets += , @($c, $e)
@@ -241,13 +255,21 @@ switch ($Mode) {
         # with all numbers normalized to Double.
         # NOTE: `close discard` does NOT undo writes to an OLE-embedded workbook, so a mid-loop failure must be
         # rolled back here: every cell already written is restored to its original value before rethrowing.
-        $done = @()
+        $done = @(); $fedits = @()
         try {
             foreach ($t in $targets) {
                 if ($null -ne $t[1].format) {
                     $origf = [string]$t[0].NumberFormat
                     [void][System.__ComObject].InvokeMember('NumberFormat', [Reflection.BindingFlags]::SetProperty, $null, $t[0], @([string]$t[1].format))
                     $done += , @($t[0], $origf, 'fmt'); continue
+                }
+                if ($null -ne $t[1].formula) {
+                    $origF = [string]$t[0].Formula
+                    [void][System.__ComObject].InvokeMember('Formula', [Reflection.BindingFlags]::SetProperty, $null, $t[0], @([string]$t[1].formula))
+                    $done += , @($t[0], $origF, 'formula')
+                    $fedits += [ordered]@{ sheet = $t[1].sheet; cell = $t[1].cell; before = $origF; after = [string]$t[0].Formula
+                        as_requested = ([string]$t[0].Formula -ceq [string]$t[1].formula) }
+                    continue
                 }
                 $orig = $t[0].Value2
                 $v = $t[1].to
@@ -258,7 +280,7 @@ switch ($Mode) {
         } catch {
             $err = $_.Exception.Message
             [array]::Reverse($done)
-            foreach ($d in $done) { $p = $(if ($d.Count -gt 2) { 'NumberFormat' } else { 'Value2' }); [void][System.__ComObject].InvokeMember($p, [Reflection.BindingFlags]::SetProperty, $null, $d[0], @($d[1])) }
+            foreach ($d in $done) { $p = $(if ($d.Count -gt 2 -and $d[2] -eq 'formula') { 'Formula' } elseif ($d.Count -gt 2) { 'NumberFormat' } else { 'Value2' }); [void][System.__ComObject].InvokeMember($p, [Reflection.BindingFlags]::SetProperty, $null, $d[0], @($d[1])) }
             $xl.Calculate()
             Out-Json ([ordered]@{ applied = 0; rolled_back = $done.Count; error = $err }) $Arg2
             "FAILED and rolled back $($done.Count) cell(s): $err"; exit 5
@@ -280,7 +302,9 @@ switch ($Mode) {
         }
         $full = $Arg2 -replace '\.json$', '.after_full.json'
         Out-Json $after $full
-        Out-Json ([ordered]@{ applied = $targets.Count; changed_cells = $changes; after_full = $full }) $Arg2
+        $res = [ordered]@{ applied = $targets.Count; changed_cells = $changes; after_full = $full }
+        if ($fedits.Count -gt 0) { $res.formula_edits = $fedits; $res.formula_approval = $spec.formula_approval }
+        Out-Json $res $Arg2
         "set ok: $($targets.Count) input(s) changed, $($changes.Count) cell value(s) changed -> $Arg2"
     }
     'copyfmt' {
