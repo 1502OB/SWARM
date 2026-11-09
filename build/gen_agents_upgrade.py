@@ -107,6 +107,11 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
    {MAN}/<task-id>.task.json "change" and crop that view's area; say the crop is approximate.
 3. Read the PNG and inspect it for: overlapping text, tags off-sheet or over linework, revision clouds with inverted
    arcs (arcs must bulge outward), missing or duplicated elements, and anything that does not match expected.json.
+   Every new text, tag number and cloud must actually be visible in the crop (22-022: delta '3' tags, an MTEXT calc
+   and P012 clouds existed in the drawing but did not print): an empty triangle or a missing cloud is a FAIL.
+   Check the crop is the layout, not a bare model-space plot (no title block = the plot ran with a floating
+   viewport active; report "replot in paper space"). AutoCAD PDFs are often stored rotated 270: render with the
+   page rotation applied before judging.
 4. Write {MAN}/<task-id>.visual.json: {{"run_id","task_id","status":"PASS|FAIL|unavailable","reason":"plain
    language","crops":[paths],"export":"<pdf path>"}}.
 If no export tool works (or an AutoCAD task has no PDF), write status "unavailable" for every such task and say so
@@ -168,7 +173,10 @@ write("script-debugger", fm(
 
 Load the `revit-conventions` skill for a Revit (.cs) script, or the `acad-conventions` skill for an AutoCAD (.lsp)
 script, before you change it, and read that skill's references/scripting-lessons.md: most past failures are listed
-there. For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
+there. For .lsp, also load the `autocad-api` skill and run (or, if your Bash refuses it, Grep for) every function,
+vla- member and DXF code of the failing script: `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py
+--lsp <file> --with C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp` (NOT FOUND / DOC-ONLY = the likely cause; list
+them in debug.json). For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
 misspelled member is the most common cause. The checker script is not in your Bash allowlist, so use Grep on
 revit-api/references/ as its SKILL.md describes, and list every member you checked in debug.json.
 
@@ -179,8 +187,14 @@ When a writer reports failure, the orchestrator gives you the task id, run id an
    would show it; do not guess a fix.
 2. Write a corrected script to {SCRIPTS}/<task-id>.v<n>.<ext> (next free n; keep earlier versions) with matching
    cleanup. Fix that script; do not rewrite it. Keep it idempotent and all-or-nothing (one transaction group / UNDO
-   group). For .lsp run `python {TOOLS_DIR}/lspcheck.py <file>` (exit 1 = unbalanced parens). Bash allows only that
-   and `{VALIDATE} <schema> <file>`.
+   group). For .lsp run `python {TOOLS_DIR}/lsp_lint.py <file>` (must be 0 errors; it catches the stray ')' that
+   lspcheck.py missed on 22-022) and, when a snapshot copy exists, lsp_dryrun.py. Bash allows only these,
+   lspcheck.py and `{VALIDATE} <schema> <file>`.
+   Never change a layer name, handle, coordinate or style constant from a claim in your prompt: read it in the
+   scout digest or have the orchestrator get the live DXF first (22-022 R8 v5 set layer "PLBG" from a misread and
+   v6 had to revert it). An error with no location ("bad argument type: consp T"): add stage tags
+   (<task>.stage.txt) and ask for a rerun; do not guess. "bad function: '<string>'": a symbol was clobbered by an
+   earlier setq in that AutoCAD session (22-022: abs) - say so; the fix is in the session, not the script.
 3. Write {MAN}/<task-id>.debug.json: {{"run_id","task_id","cycle","cause","evidence","fix","new_script",
    "landed_in_model": "no|maybe|yes (and why)","confidence":"high|medium|low","lesson":"one line or none"}}.
 Hand back to the orchestrator. Reply in at most 5 lines: cause, new script path, confidence.

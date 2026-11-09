@@ -192,6 +192,10 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
     - For Revit scripts: run the scripter's "members:" line through
       `python C:/Users/Jeremy/.claude/skills/revit-api/scripts/revit_api_check.py <Type.Member ...>`. Any NOT FOUND
       sends the script back to the scripter (it is an invented member; the checker suggests the right one).
+    - For AutoCAD scripts (2026-11-06): `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py
+      --lsp scripts/<task>.lsp --with library/acad/swarm_lib.lsp` (a .vN patch also needs `--with` its base script),
+      then the scripter's "acad_members:" line through the same checker. Any NOT FOUND / DOC-ONLY goes back to the
+      scripter.
     - The script's return must end with `done=<n> skipped=<n> failed=<n>`; writers copy it into write.json item COUNTS
       and the verifier fails a count mismatch.
 11. write.json status "timeout" (schema since 2026-11-05) always routes to the DIALOG CHECK and a read-only reconcile

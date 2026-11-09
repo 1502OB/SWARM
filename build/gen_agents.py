@@ -345,6 +345,12 @@ Load the `acad-conventions` skill first (Skill tool).
   (progn (setq ss (ssget "_X" '((410 . "Model"))) i 0 al nil) (if ss (while (< i (sslength ss)) (setq ty (cdr (assoc 0 (entget (ssname ss i)))) p (assoc ty al)) (setq al (if p (subst (cons ty (1+ (cdr p))) p al) (cons (cons ty 1) al))) (setq i (1+ i)))) (vl-princ-to-string al))
 - If the task asks you to repeat a call N times (concurrency probes), make the calls back to back,
   record each response's ok flag, a short fingerprint, and any error text.
+- Never setq a global whose name is an AutoLISP built-in or a common word (abs, rel, min, max, type, length,
+  list, path, e, i, ss, ...): the value replaces the function for that drawing's whole session (22-022: a scout's
+  (setq abs (findfile ...)) broke every later script with "bad function: '<path>'"). Use prefixed names such as
+  SC:PATH, SC:I, and set them back to nil at the end of the call.
+- Reading another open drawing: use the Documents collection read-only (vla-Item, vla-HandleToObject on that
+  document); never vla-Activate (your guard blocks it; activation is acad-ops' job).
 
 {harden_scout("acad")}
 {COMMON}
@@ -359,7 +365,7 @@ Bash is limited to lsp_lint.py, lsp_dryrun.py (headless AutoCAD on a drawing COP
 
 Before writing anything for Revit, load the `revit-conventions` and `revit-api` skills (Skill tool) and follow them.
 For AutoCAD, load the `anthropic-skills:autocad-mcp-drafting` skill and follow its transport and helper patterns,
-and load the `acad-conventions` skill.
+and load the `acad-conventions` and `autocad-api` skills.
 
 ## Inputs
 The orchestrator gives you a task id, goal, and the exact input files (task.json, scout.json if a scout ran).
@@ -376,19 +382,42 @@ Read those; do not look for a scout manifest that was not listed.
    - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
      (c:<TASK>-RUN) creates everything and returns a short string of the new handles; (c:<TASK>-CLEAN) deletes
      exactly those entities (by handle, collect-then-delete) and the layer it created, and returns counts;
-     (c:<TASK>-CHECK) read-only post check. Use entmake with explicit layer (8) and space (67 0 = model).
-     Do not switch layouts, do not use (command) unless unavoidable, do not save.
+     (c:<TASK>-CHECK) read-only post check. Use entmake with explicit layer (8) and space (67 0 = model) for
+     geometry; make new TEXT/MTEXT (and, where one exists in that space, delta tags/clouds) as vla-Copy of a plotting
+     entity of the same kind in the same space, then set string and position (22-022: AddText/AddMText and entmake'd
+     paper markup existed but never plotted).
+     Do not switch layouts, never use (command) (it fails under the dispatcher), do not save.
+     22-022 rules (details in acad-conventions scripting-lessons): read every constant live in PLAN (swl:preflight)
+     and print the live value on ABORT; write stage tags to <task>.stage.txt from v1; create N_P_REV3 when missing
+     (copy of N_P_REV2, else colour 1 Continuous plottable) instead of aborting, and record it for CLEAN; CLEAN and
+     rollback delete with vla-Delete and verify vlax-erased-p (never entdel); a handle is live only if entget is
+     non-nil; CHECK finds your own entities by the handles in created.txt; skip non-plot (Defpoints) layers in clash
+     scans; any search over ~500 entities prefilters to a frame, scans a coarse grid and has a hard cap; MTEXT is
+     measured with the same builder in PLAN and RUN (max of DXF 42/43 and bbox) and re-measured after creation.
+     Variables never share a name with a function or an AutoLISP built-in (case-insensitive): prefix them TASK:NAME.
      Shared library (2026-11-06): the writer loads {SWARM}/library/acad/swarm_lib.lsp before your script. Call its
      swl: helpers instead of writing your own (results: swl:result / swl:san - one line, no newlines; boxes, overlap,
      crossing-aware clash swl:clash, viewport projection swl:vp / swl:ms->ps / swl:ps->ms, clockwise clouds
      swl:cloudpts / swl:entmake-cloud / swl:cloud-check, live-value preflight swl:preflight, tag spots swl:best-spot).
      Never redefine an swl: function. XREF / PDFATTACH / IMAGE attach and PUBLISH go through
-     (swl:queue-command "<literal command>"), never (command ...) (it cannot run them inside the dispatcher).
+     (swl:queue-command "<literal command>") in a separate <task-id>.attach.lsp, never (command ...). The argument
+     must be ONE string literal (writer_guard refuses strcat'd/variable text): put path, page, insertion, scale and
+     rotation in the literal, check the live slot against those values first and ABORT on a mismatch, and end the
+     literal WITHOUT a trailing \r (the helper adds one). PLAN must then detect the attached entity.
+     expected.json: say whether each chord/margin limit is plot inches or model units (and S); a one-arc side may
+     exceed the chord band up to 0.5 plot in - say so in the item.
      Prefix your own helpers with your task id (e.g. c22r8:) so two scripts never clash.
      Before you hand an .lsp back: `python {SWARM}/tools/lsp_lint.py <file>` must report 0 errors (a hook also
      checks every .lsp you write), then `python {SWARM}/tools/lsp_dryrun.py <file> "<drawing copy>" <TASK>` on the
      drawing's snapshot backup ({SWARM}/backups/<run-id>/<dwg>) must say clean or needs_full_autocad (ActiveX parts run
      only in live AutoCAD). Report the dry-run status and steps in your reply.
+     API check (autocad-api skill, 2026-11-06): every AutoLISP function, vla- member and DXF group code the script
+     uses must be listed in that skill (references/core.md first; it lists names that do NOT exist, e.g. fboundp,
+     stringp, MText Explode). If your Bash allows it, run
+     `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py --lsp <file> --with {SWARM}/library/acad/swarm_lib.lsp`;
+     otherwise Grep its references/ as its SKILL.md says. In your reply add "api_checked: <n> found, 0 not found" and
+     a line "acad_members: Object.Member, ..." for every vla- call whose object you know (LWPolyline.SetBulge,
+     ModelSpace.AddText), so the orchestrator can check the object, not just the name.
 2. {MAN}/<task-id>.expected.json — what the model must look like afterwards, as a list of checkable items, in the
    strict schema {SCHEMAS}/expected.schema.json (2026-11-04; see Hardening rules):
    {{"run_id":"<run id>","task_id":"<task id>","items":[{{"id":"I1","check":"plain-language check, including which read
@@ -416,7 +445,9 @@ Read those; do not look for a scout manifest that was not listed.
 - Revit: read C:/Users/Jeremy/.claude/skills/revit-conventions/references/scripting-lessons.md before writing or
   fixing any .cs (API facts, naming, worksets, return size, Pad 11 and Garden lessons).
 - AutoCAD: read C:/Users/Jeremy/.claude/skills/acad-conventions/references/scripting-lessons.md before any .lsp
-  (payload size, snaps, publishing, AutoLISP gaps, cloud bbox, annotative scales, OLE window).
+  (payload size, snaps, publishing, AutoLISP gaps, cloud bbox, annotative scales, OLE window, and the 22-022
+  Carmel section: live values, name clashes, stage tags, search caps, literal attaches, vla-Delete, text that
+  does not plot, delta layer, MTEXT size, check plots, OLE frame choice, PDF row measuring).
 
 ## Fixing a failed script (fix mode; swarm/LESSONS.md R28)
 The orchestrator runs you in fix mode on opus only after script-debugger has failed twice on the same task. It
@@ -563,6 +594,16 @@ Load the `anthropic-skills:autocad-mcp-drafting` skill first, then the `acad-con
   restarted, report it (it needs `system init`).
 - "Single transaction" for AutoCAD means one RUN call doing all the creation (wrap in an UNDO group inside the
   script if the scripter provided one).
+- Result files (<task>.<CMD>.result.txt) can appear a moment after the call returns: if the first read misses or
+  still says RUNNING, wait a few seconds and read again; never rerun a RUN to get its result.
+- Check plots (22-022): set CTAB, force paper space ((vla-put-MSpace doc :vlax-false); CVPORT must read 1 - a
+  floating viewport left active plotted P101-W as bare model space), vla-Regen acAllViewports, make sure the output
+  folder exists, then plotfns.lsp _plot1. Restore CTAB and BACKGROUNDPLOT (plotfns leaves it 0) afterwards. A bridge
+  timeout on _plot1 is normal: wait, then compare the PDF size with an earlier good plot of the same layout before
+  deciding to replot (a 2 KB file is a failed plot). Regen/plot raise DBMOD; that is not an edit.
+- If a script fails with "bad function: '<string>'", a symbol was clobbered by an earlier setq in this session
+  (22-022: abs). Report (type <symbol>) for the functions the script calls and any symbol holding that string; do
+  not reload or edit around it yourself.
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", ACAD_SAVE_RULE)}
 """)
@@ -636,6 +677,13 @@ anything in AutoCAD.
   (right - 0.17 in, top + 0.08 in) paper (tolerance 0.02 in), and that the cloud and tag box touch no other cloud.
   View rotation: check View.RightDirection, not the crop box.
 - Text found by search: match by handle/location, not by short strings ("4DFU" also occurs in fixture tags).
+- AutoCAD new text/markup: existing in the database does not prove it prints (22-022: tags, an MTEXT calc and P012
+  clouds all entget'ed fine and never plotted). Any item that says a new text, tag or cloud is shown is null
+  ("unverifiable: needs plot") unless visual.json covers it; do not mark it pass from entget alone.
+- When an expected.json item is superseded by a recorded decision the orchestrator quotes (e.g. Jeremy dropped a
+  cloud), mark it null with "superseded by <decision>" and check the stated replacement instead.
+- Never setq a global named like an AutoLISP built-in (abs, rel, min, type, ...) in your read-only LISP; prefix
+  your variables (VF:...). A clobbered built-in breaks every later script in that drawing.
 - If an item cannot actually be observed with your tools (e.g. how something looks on screen), set pass to null and
   note "unverifiable: <what was checked instead>". Never mark an inferred property as a plain pass.
 - Write {MAN}/<task-id>.verify.json: run_id, task_id, phase ("build" or "cleanup"), status, items:[{{id, check,
