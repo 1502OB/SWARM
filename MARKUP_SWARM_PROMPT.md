@@ -270,3 +270,26 @@ Bash-holding agents use the allowlist profiles in ~/.claude/hooks/bash_allowlist
 guard changes are tested with ~/.claude/hooks/tests/test_guards.py before they are committed.
 
 Start by confirming both bridges respond, listing what is in inputs/, and asking me for the project number/name and which model (Revit, AutoCAD or both) produces the plumbing sheets.
+18. Pacific Edge 24-071 (2026-11-04..10, LESSONS R30-R46, Q25-Q26, J10-J12):
+    a. Sync comment characters: letters, digits, space and . , : ; ( ) / # ' _ + = & - only (no %: orchestrator_guard
+       rejects it; write "100 pct").
+    b. Done means plotted: before telling Jeremy a model batch is finished, plot EVERY sheet the batch touches (or the
+       whole issue) and review it yourself: `tools/contact_sheets.py <export dir> <out dir>` (6 sheets per image + plan
+       renders), after confirming each PDF's sheet number (exports land a call late). Spot checks are not a set check.
+    c. Team / transmittal sets: grayscale, true sheet size, one combined PDF per building in sheet order, a bookmark per
+       sheet: a writer runs a Document.Export task like scripts/P71-PDF-T1.cs (PDFExportOptions GrayScale,
+       PaperFormat Default, Combine), then `tools/bookmark_set.py`; file it next to the other disciplines in the same
+       Transout folder with their naming, never overwriting another discipline's file. MCP batch_export is for
+       check crops only.
+    d. A Revit call that hangs on a write in a cloud model is usually an editing-request dialog for an element another
+       user has borrowed (24-071: Project Information, owner rdc-s111_matthew.terry). Ask Jeremy to cancel it, then
+       confirm read-only that nothing applied. Scripts check GetCheckoutStatus in the dryrun.
+    e. BIM execution plans: at intake read the whole BEP (not only the items an email cites), keep a compliance table in
+       STATUS.md, and never tell Jeremy we follow it until each item is checked. Coordinate reacquire: his yes first.
+    f. A doubtful visual-verifier finding (24-071: "concentric circles may be sprinkler heads" were floor drains):
+       look at the crop yourself before acting on it.
+    g. writer_guard blocks reflection except typeof(IFamilyLoadOptions).GetMethod("OnFamilyFound"/"OnSharedFamilyFound"):
+       a family reload WITH overwrite uses the Emit helper in scripts/TB-T1.cs. Any other blocked call: ask, don't route
+       around it.
+    h. project.json is shared across sessions (24-071 found it on the Mansfield job): at Step 0 back the current one up
+       as project.json.<number>.bak and restore yours; check both locks read "released" first.

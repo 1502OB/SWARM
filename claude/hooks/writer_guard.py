@@ -20,6 +20,10 @@
    commands: vla-SendCommand / vla-PostCommand (raw or through swl:queue-command in the shared library) may send
    only the commands in QUEUE_ALLOWED; reflection that can reach blocked members (GetMethod, InvokeMember) is
    blocked. Tests: hooks/tests/test_guards.py.
+   (2026-11-10, Jeremy) revit-writer exception: typeof(IFamilyLoadOptions).GetMethod("OnFamilyFound" |
+   "OnSharedFamilyFound") is allowed, for an Emit-built IFamilyLoadOptions (family reload with overwrite). The
+   reflection rule also now blocks GetMethods/GetMember(s)/GetRuntimeMethod(s)/CreateDelegate and emitted call
+   opcodes (OpCodes.Call/Callvirt/Calli/Ldftn/Ldvirtftn), so the exception cannot reach Save or Sync.
 6. (2026-11-09) acad-ops may close a drawing (Jeremy D2) only with the exact ACAD_CLOSE_RE form: Saved = :vlax-true,
    not the active drawing, (vla-Close d :vlax-false); the orchestrator sends it only on an explicit close step.
    `writer_guard.py scripter|script-debugger` (Jeremy D1) on Write|Edit: Edit only swarm/scripts/*.lsp and the
@@ -42,7 +46,15 @@ SWARM_LIB = fwd(SWARM / "library/acad/swarm_lib.lsp")  # shared AutoLISP library
 TOOLS = fwd(SWARM / "tools")
 # Commands a writer may queue with vla-SendCommand (they cannot run inside the dispatcher's (command) context).
 QUEUE_ALLOWED = re.compile(r"^\s*_?\.?-?(XREF|PDFATTACH|IMAGE|IMAGEATTACH|PUBLISH|REGENALL)\b", re.IGNORECASE)
-REFLECTION_DENY = re.compile(r"\b(GetMethod|InvokeMember)\b")
+REFLECTION_DENY = re.compile(
+    r"\b(GetMethods?|GetRuntimeMethods?|GetDeclaredMethods?|GetMembers?|InvokeMember|CreateDelegate|"
+    r"OpCodes\s*\.\s*(?:Call|Callvirt|Calli|Ldftn|Ldvirtftn))\b")
+# Jeremy 2026-11-10 (24-071): the one reflection a revit-writer may use is building an IFamilyLoadOptions with
+# Reflection.Emit (the bridge has no class declarations), so a family can be reloaded with overwrite. Exactly these
+# two lookups are allowed; any other GetMethod, member lookup or emitted call instruction is still blocked.
+FAMILY_LOAD_OPTIONS_OK = re.compile(
+    r'typeof\s*\(\s*(?:Autodesk\s*\.\s*Revit\s*\.\s*DB\s*\.\s*)?IFamilyLoadOptions\s*\)\s*\.\s*'
+    r'GetMethod\s*\(\s*"(?:OnFamilyFound|OnSharedFamilyFound)"\s*\)')
 
 # Jeremy, 2026-11-02 (split): revit-writer = model edits in transactions + switching to an already-open model.
 # File operations (save / save-as / sync / relinquish / close / detach / audit / open) belong to revit-ops only.
@@ -142,7 +154,7 @@ def main():
 
     if app == "revit" and tool == prefix + "send_code_to_revit":
         code = str(ti.get("code", ""))
-        bare = strip_cs(code)
+        bare = strip_cs(FAMILY_LOAD_OPTIONS_OK.sub("IFLO_METHOD", code))
         m = REVIT_DENY.search(bare) or REFLECTION_DENY.search(bare)
         if m:
             block(f"code references '{m.group(1)}'; revit-writer only edits the model in transactions. Save, sync, "

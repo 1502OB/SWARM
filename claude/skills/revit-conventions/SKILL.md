@@ -9,20 +9,25 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
 - **Never:** Save, SynchronizeWithCentral, relinquish or close from a script (only the orchestrator's SYNC A/B
   template); hard-code an ElementId found in another model; delete an element without re-reading its id, owner
   view and text/value first; write without a snapshot for the current run id; put a cloud on an issued revision or
-  invent a revision.
+  invent a revision; edit an element another user has borrowed (check WorksharingUtils.GetCheckoutStatus in the
+  dryrun: Revit raises an editing-request dialog that blocks the bridge); edit a view template shared with other
+  buildings (make a copy); declare a class in a script (the code is a method body).
 - **Irreversible, and how it is softened:** deletes cannot be undone by cleanup, so the restore point is the ACC
   version made by SYNC A (say so in the task's cleanup note); parameter and crop/position edits return the old
   values so a cleanup script can put them back; model-wide or shared-type changes need Jeremy's OK per batch.
 - **Failure looks like:** a return starting `ROLLED_BACK`, `NO_GO` or `TIMEOUT`; done/skipped/failed counts that
   differ from expected.json; an element that exists but is not visible in its target view (wrong workset or view
   range); `skipped > 0` when nothing should already be in the target state. Report these; never call them a pass.
+  A bare "Exception has been thrown by the target of an invocation" hides the real error: return FAILED strings
+  before changes and catch/return ex.Message around risky calls. A trivial call timing out = a Revit dialog is open.
 - **Done when:** the script returned `done=<n> skipped=<n> failed=0` with ids; an independent re-query (verifier)
   confirms every expected.json item; clouds are clockwise, tagged once, in the sheet's revision schedule; new
   elements are visible in every target view; the visual check of the exported sheet passed.
 
 ## Before writing or fixing a script
 - Read `references/scripting-lessons.md` (compile and API facts, naming across models, worksets and view range,
-  return size, Pad 11 and Garden lessons). New Revit lessons go there.
+  return size, Pad 11, Garden and Pacific Edge 24-071 lessons: elevation basis, ownership dialogs, templates, link
+  display, schedule filters, shared parameters, grayscale PDF export). New Revit lessons go there.
 - Check every API member in the `revit-api` skill.
 
 ## Revision clouds via the API

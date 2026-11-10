@@ -249,6 +249,13 @@ every task for it is blocked with that reason.
   Level Coarse; 0 DFU was the SAN system type's Calculations setting; stacked labels were tag-type label switches).
 - Things the API cannot do (retarget view references/match lines, edit label formats) get agent "manual" and an
   open question for Jeremy, not a scripter task.
+- Also manual (24-071, LESSONS R36-R43): per-category overrides inside a linked view, Parameter
+  Service downloads (recreate the shared parameter by GUID instead), and any element another user has borrowed
+  (list the owner from the scout; the task waits until they relinquish).
+- BIM execution plan: when the project has one (e.g. Common Arts BIMxP: consultant title block, fonts, shared
+  parameters, SHEET Sorting Number, Transfer Project Information, background views By Linked View, shared
+  coordinates), add a "BEP compliance" table to REVISION_PLAN.md (item, status in the model, scripted task or manual
+  step, who). Read the whole document, not only the items an email names. Coordinate reacquire needs Jeremy's yes.
 - Title block content (project no., stamp, seal, permit, issue fields) is Jeremy's: no task. Other disciplines'
   CAD and xrefs are reference only: never plan edits to them.
 - Put edits to the same note or label in ONE task so it is not clouded twice. Split tag-heavy Revit work into tasks

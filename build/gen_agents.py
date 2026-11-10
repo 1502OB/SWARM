@@ -336,6 +336,14 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
 - Sheet Number can read blank on the sheet while its title block instance has it: report both and match sheets by
   the title block number, else by name.
 - For views that will be tagged, report whether each is a dependent view (GetPrimaryViewId) and its parent.
+- Elevations (24-071): report each level's Elevation AND ProjectElevation and the Elevation Base; when they
+  differ, internal Z = ProjectElevation basis. Give every Z you report in both bases.
+- "Not visible" triage: check the element's / link's workset visibility in the view (hidden-by-default worksets
+  with UseGlobalSetting), the link override (ByHostView / ByLinkView / Custom + LinkedViewId) and the view range,
+  before concluding geometry is wrong.
+- For every element a later task will edit, report WorksharingUtils.GetCheckoutStatus and the owner
+  (GetWorksharingTooltipInfo): a borrowed element blocks the writer with a dialog.
+- Linked views: match host plans to arch background views by level ProjectElevation and building prefix, not name.
 
 {harden_scout("revit")}
 {COMMON}
@@ -401,6 +409,22 @@ Read those; do not look for a scout manifest that was not listed.
      for send_code_to_revit with transactionMode "auto" (one transaction wraps the whole batch; do not open your own).
      Look up anything it needs (view family types, revisions, text types) by query inside the script, never by
      hard-coded ElementId. Return a compact string/JSON of created element ids and key values.
+     Pacific Edge rules (2026-11-10, LESSONS R30-R46; details in revit-conventions scripting-lessons):
+     - The code is a method body: no class declarations (failure preprocessors cannot be written; a family reload
+       with overwrite uses the IFamilyLoadOptions Reflection.Emit helper from scripts/TB-T1.cs, the only reflection
+       writer_guard allows). Pre-change failures RETURN "FAILED <task>: ..." (thrown
+       messages are hidden by the bridge); wrap Delete / NewFamilyInstance / fittings in try/catch and return ex.Message.
+     - The dryrun checks WorksharingUtils.GetCheckoutStatus of every element the run will modify (OwnedByOtherUser
+       -> FAILED with the owner): editing a borrowed element raises a dialog that blocks the bridge.
+     - Normalise text with Regex \\s+ -> " " before matching; unpin before Delete; take Z from Level.ProjectElevation
+       when the level's Elevation Base is the survey point, and check it against an existing element.
+     - Work-plane-based families: NewFamilyInstance(level.GetPlaneReference(), ...), not a SketchPlane reference;
+       report the family's connector classification in the dryrun.
+     - Templates: never edit one shared with other buildings; copy with CreateViewTemplate() + the original's
+       non-controlled list. Links: "By Linked View" can't hide linked categories; use Custom with the same
+       LinkedViewId. Hidden-by-default worksets: SetWorksetVisibility per view (or our template).
+     - Schedule filters: Contains only on string fields, AND only. Titles white with black bold text (grayscale plots).
+     - EditFamily / LoadFamily / Document.Export need transactionMode "none".
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
    - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
@@ -542,6 +566,9 @@ WRITER_RULES = """## Procedure (in order)
    with "TIMEOUT: verify before the next task". A Revit "Code execution timed out" reply is a timeout too: such
    writes have often committed. If even a trivial call (status, info) times out, the app is blocked (usually a
    dialog): stop and report it; never loop.
+   A write that hangs on its first call in a workshared cloud model is usually an editing-request dialog for an
+   element another user has borrowed (24-071: Project Information): stop, report "dialog: Jeremy must cancel it",
+   and after he does, confirm read-only that nothing was applied before you write the log.
    After a write returns, make ONE short read-only check of the result (e.g. that the created ids exist), labelled
    with your task id, and log it as post_check: a crossed reply or a user sync mid-batch can hide a lost write.
 4. Log: {man}/<task-id>.write.json in the strict schema (see Hardening rules), and the details to

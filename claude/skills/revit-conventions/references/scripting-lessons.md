@@ -61,3 +61,68 @@ Read before writing or fixing a script. New lessons go here, plus a one-line poi
 - "Computed" values (DFU/FU, flow) settle only after commit. Never put a count or value the script computed inside
   its own transaction into expected.json; write the check and let the verifier read the settled value.
 - Export/print by sheet number, never by sheet name (duplicate names overwrote each other's PDFs).
+
+## Pacific Edge 24-071 lessons (2026-11-04..10; swarm/LESSONS.md R30-R46)
+Bridge and script shape
+- The script is the BODY of a method: no `class` declarations (CS1513 "} expected" / "Type or namespace definition ...
+  expected"). Local functions and lambdas are fine. Interfaces that need an implementing class (IFailuresPreprocessor)
+  cannot be written. IFamilyLoadOptions: use the Reflection.Emit helper in scripts/TB-T1.cs; writer_guard allows only
+  `typeof(IFamilyLoadOptions).GetMethod("OnFamilyFound"|"OnSharedFamilyFound")` and blocks all other reflection (R40).
+- The bridge hides thrown messages ("Exception has been thrown by the target of an invocation"). When a check fails
+  BEFORE any change, `return "FAILED <task>: <reason>"`; throw only to roll back after changes, and put the reason in
+  the message anyway. Wrap each risky call (Delete, NewFamilyInstance, NewTeeFitting) in try/catch and return
+  ex.GetType().Name + ex.Message (R31).
+- Plumbing types need full names in some bridge builds: `Autodesk.Revit.DB.Plumbing.Pipe`, `.PipeType`,
+  `.PipingSystemType`, `.PlumbingUtils` (a `using` line is not allowed).
+- EditFamily, LoadFamily and Document.Export(PDF) need transactionMode "none" (the project must not be modifiable);
+  open your own Transaction inside the family document (R41).
+Matching and editing
+- Text matching: TextNote.Text contains "\r" line breaks; normalise with
+  `Regex.Replace(t, @"\s+", " ").Trim().ToUpperInvariant()` before comparing (R30).
+- Pinned elements throw on Delete: `if (e.Pinned) e.Pinned = false;` in the same transaction, then delete (R32).
+- Workshared cloud model: an element borrowed by another user (WorksharingUtils.GetCheckoutStatus ==
+  OwnedByOtherUser, e.g. Project Information owned by the architect) makes Revit raise an editing-request DIALOG that
+  blocks the bridge until someone answers it (300 s timeout, every later call times out). The dryrun must check the
+  checkout status of every element it will modify and RETURN FAILED with the owner name (R42).
+Elevations and placement
+- Level.Elevation can be survey-based (Elevation Base = Survey Point): in PLMB-24220-R25, Elevation 57.66 =
+  internal 169.84. Internal Z = Level.ProjectElevation in that case. Never type an elevation; read it from the Level
+  and check it against an existing element on that level (R34).
+- Work-plane-based families (FamilyPlacementType.WorkPlaneBased): `NewFamilyInstance(sketchPlane.GetPlaneReference(),
+  ...)` fails "Failed to create family instance on face"; `NewFamilyInstance(level.GetPlaneReference(), pt,
+  XYZ.BasisX, symbol)` works. Check the family's connector classification in the dryrun: the 120D combo roof drain
+  connector is SupplyHydronic, so SD pipes cannot connect to it (R35, R46).
+- Sloped branch into a vertical riser: NewTeeFitting fails ("angle between connectors"); a second leader ending
+  0.2-0.4 ft above an elbow-trimmed riser top cannot be teed either; leave those for a manual drag-join (see R20).
+Views, templates, links
+- New elements and links can be invisible because their WORKSET is hidden by default and the view uses
+  UseGlobalSetting (24-071: A-OCEAN NORTH held the arch link, A-STORM the new storm pipes): set
+  `view.SetWorksetVisibility(wsId, WorksetVisibility.Visible)` (template views: on the template) (R33).
+- View templates cannot be View.Duplicate'd (CanViewBeDuplicated = false). Make a copy with
+  `viewUsingTemplate.CreateViewTemplate()`, rename it, copy `GetNonControlledTemplateParameterIds()` from the
+  original, and re-point only the target views. Never edit a template shared with other buildings (R36).
+- RevitLinkGraphicsSettings exposes only LinkVisibilityType, LinkedViewId, ViewRange, ObjectStyles, NestedLinks,
+  ViewFilterType, ColorFill: no per-category control. "By Linked View" shows whatever the linked view shows (grids
+  included). To hide linked grids keep the same LinkedViewId with LinkVisibilityType = Custom and hide OST_Grids in
+  the host view (24-071 F-P2.04 test, then 18 views) (R37).
+- Match a host plan view to the arch background view by level ProjectElevation (within 1 ft) and building prefix,
+  not by level name (arch "SURF - LEVEL 1 (BEACH)" vs host "SURF - BEACH LEVEL"); use "BACKGROUND FLOOR PLAN", not
+  the RCP backgrounds (R37).
+Schedules and parameters
+- ScheduleFilter Contains/BeginsWith work only on string fields; ElementId fields (Level) reject them with "The field
+  and filter type cannot be used to filter this ScheduleDefinition"; filters are AND-only. Tag a string field
+  (e.g. Comments) or filter Equal on an ElementId (R38).
+- Schedule titles: a dark fill with white text prints black-on-dark in grayscale/black-line plots; use a white cell
+  with black bold text. Set TableCellStyleOverrideOptions (BackgroundColor, FontColor, Bold = true) before
+  SetCellStyle. Column headings live in Body row 0; turn group ShowHeader/ShowFooter off for a one-row-per-type
+  count schedule (R39).
+- Consultant shared parameters (BIMxP): ParameterUtils.DownloadParameter with "parameters.<guid>:1.0.0" threw
+  ArgumentException. Recreate with the architect's exact GUID: temp shared parameter file
+  (ExternalDefinitionCreationOptions.GUID), BindingMap.Insert(def, InstanceBinding(Sheets), GroupTypeId.Data), restore
+  Application.SharedParametersFilename in finally. Delete a same-name NON-shared project parameter first. A
+  linked-model schedule reads sheet parameters by GUID (R43).
+Plotting
+- MCP batch_export: paper sizes only (no colour, no sheet size), and its replies lag by one call. Find each PDF on
+  disk and confirm the sheet number text is on the page. For deliverable sets use Document.Export(folder, sheetIds,
+  PDFExportOptions{ColorDepth = GrayScale, PaperFormat = ExportPaperFormat.Default (sheet size), Combine = true,
+  FileName, Hide* = true}) (scripts/P71-PDF-T1.cs) and add bookmarks with tools/bookmark_set.py (R44).

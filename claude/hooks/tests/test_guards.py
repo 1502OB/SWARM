@@ -78,6 +78,24 @@ run(WG, ["revit"], SC, {"code": 'TextNote.Create(doc, v.Id, p, "CLOSE TO WALL - 
     ALLOW, "text note text 'CLOSE ... AUDIT' + comment")
 run(WG, ["revit"], SC, {"code": 'doc.Save();'}, BLOCK, "revit-writer Save")
 run(WG, ["revit"], SC, {"code": 'doc.Close(false);'}, BLOCK, "revit-writer Close")
+# 2026-11-10 (24-071): Emit-built IFamilyLoadOptions is the one allowed reflection; everything around it stays blocked.
+IFLO = ('var tb = mb.DefineType("O", TypeAttributes.Public, typeof(object), new[] { typeof(IFamilyLoadOptions) });\n'
+        'var il = m1.GetILGenerator(); il.Emit(OpCodes.Ldarg_2); il.Emit(OpCodes.Ldc_I4_0); il.Emit(OpCodes.Stind_I1);\n'
+        'il.Emit(OpCodes.Ldc_I4_1); il.Emit(OpCodes.Ret);\n'
+        'tb.DefineMethodOverride(m1, typeof(IFamilyLoadOptions).GetMethod("OnFamilyFound"));\n'
+        'tb.DefineMethodOverride(m2, typeof(Autodesk.Revit.DB.IFamilyLoadOptions).GetMethod( "OnSharedFamilyFound" ));\n'
+        'var fam = famDoc.LoadFamily(document, opts);')
+run(WG, ["revit"], SC, {"transactionMode": "none", "code": IFLO}, ALLOW, "Emit IFamilyLoadOptions helper (TB reload)")
+run(WG, ["revit"], SC, {"code": IFLO + '\nvar s = typeof(Document).GetMethod("Save");'}, BLOCK,
+    "helper plus GetMethod(Save) on Document")
+run(WG, ["revit"], SC, {"code": 'var m = typeof(IFamilyLoadOptions).GetMethod("Save");'}, BLOCK,
+    "IFamilyLoadOptions GetMethod with another name")
+run(WG, ["revit"], SC, {"code": 'var m = typeof(Document).GetMethods().First(x => x.Name.Length == 4);'}, BLOCK,
+    "GetMethods() lookup")
+run(WG, ["revit"], SC, {"code": 'var m = typeof(Document).GetMember("Sa" + "ve");'}, BLOCK, "GetMember lookup")
+run(WG, ["revit"], SC, {"code": IFLO + '\nil.Emit(OpCodes.Callvirt, mi);'}, BLOCK, "helper plus an emitted Callvirt")
+run(WG, ["revit"], SC, {"code": 'var d = Delegate.CreateDelegate(typeof(Action), document, "Sa" + "ve");'}, BLOCK,
+    "CreateDelegate by name")
 run(WG, ["revit"], SC, {"code": 'doc.GetType().InvokeMember("Save", f, null, doc, null);'}, BLOCK, "InvokeMember")
 run(WG, ["revit"], SC, {"code": 'return 1;'}, BLOCK, "lock not held",
     env=dict(ENV, SWARM_LOCKS_DIR=str(TMP / "nolocks")))

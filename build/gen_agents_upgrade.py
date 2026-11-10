@@ -93,6 +93,14 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
      The A0 page is 46.8 x 33.1 in and the sheet sits CENTRED AT 1:1 on it (Phase 6 test 2026-11-04: a 42x30
      sheet had 2.4 in / 1.55 in margins). The sheet size is in the title block family name (e.g. "30x42") or the
      snapshot; pass it as --sheet W,H (landscape width first) with --units in.
+     Export replies lag by one call and sometimes repeat a path (24-071, R44; even with one agent on the bridge):
+     never trust the reply. After each export, Glob the folder, and before using a PDF confirm its sheet number text
+     is on the page (visual_crop --find "<sheet no>"). Pass sheet ids, not view ids (a view id exports a bare view).
+     If a folder is still empty after the next call, re-export that one sheet once.
+   - Full-set check (orchestrator asks at the end of a run, 24-071): export every sheet of the issued set, one folder
+     per sheet, confirm each sheet number, and report per sheet: background present, unexpected items (grids,
+     sprinklers, other buildings' links), blank or placeholder sheets, text over the title block. A visual check
+     covers only the sheets you exported; say which ones you did not.
    - AutoCAD: you never plot or publish AutoCAD (plot_pdf fails on this bridge, LESSONS A6/A46; publishing stays
      with acad-writer, D4). Before you run, the orchestrator has an acad-writer "publish-sheet" task publish the
      layout (tools/acad_dsd.py + tools/swarm_publish.lsp) to {SWARM}/visual/<run-id>/<task-id>/<task-id>.pdf and
