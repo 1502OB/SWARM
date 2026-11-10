@@ -1,7 +1,13 @@
 ;;; swarm_lib.lsp - shared AutoLISP helpers for swarm scripts (prefix swl:). Library: shared-helpers.
 ;;; 2026-11-06, harvested from the r8: helpers of 24-049 C22-R8-T1.v10.lsp (ran and passed verify 11-06), generalised:
 ;;; no script globals, every setting is a parameter. Tests: test_swarm_lib.lsp (run headless with tools/lsp_dryrun.py).
-;;; Load:  (load "C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp")  before the task script; never redefine swl:*.
+;;; 2026-11-09 (Mansfield retro, LESSONS A32-A50): swl:swarm-dir, swl:result-out, swl:mtext-box / -bottom, swl:ebox,
+;;; swl:group-box, swl:clash-ex, swl:inside-vp-tol, swl:floating-vps, swl:vp-msbox, swl:on-sheet-p.
+;;; Load:  (load (strcat (swl:swarm-dir) "library/acad/swarm_lib.lsp"))  before the task script; never redefine swl:*.
+;;;        (swl:swarm-dir) = the SWARM_HOME environment variable if set, else %USERPROFILE%/swarm/. Before the first
+;;;        load swl:swarm-dir does not exist yet, so build the same path by hand: (getenv "SWARM_HOME"), else
+;;;        (strcat (getenv "USERPROFILE") "/swarm/"), + "library/acad/swarm_lib.lsp". No path in this file is hard-coded.
+;;; Naming (LESSONS A43): ed* = entget data lists, e* / en* = enames, o* = vla objects; swl:ent returns DATA.
 ;;; Boxes are (xmin ymin xmax ymax); points (x y [z]). Functions marked [AX] need ActiveX (live AutoCAD only).
 
 (vl-load-com)
@@ -19,6 +25,14 @@
 (defun swl:close (a b tol) (<= (abs (- a b)) tol))
 (defun swl:cnt (s) (if s (sslength s) 0))
 (defun swl:uniq (l / r) (foreach x l (if (not (member x r)) (setq r (cons x r)))) (reverse r))
+;; swarm root folder, forward slashes, trailing "/": SWARM_HOME if set, else %USERPROFILE%/swarm/. Every path the
+;; library builds starts here (no hard-coded user folder).
+(defun swl:swarm-dir (/ d)
+  (setq d (getenv "SWARM_HOME"))
+  (if (or (null d) (= d "")) (setq d (strcat (cond ((getenv "USERPROFILE")) ("C:")) "/swarm/")))
+  (setq d (vl-string-translate "\\" "/" d))
+  (if (/= (substr d (strlen d)) "/") (setq d (strcat d "/")))
+  d)
 
 ;; ---------------------------------------------------------------- results (one line, no newlines: bridge-safe)
 ;; replace newline / CR / tab with " | " / "" / " " and double quotes with single quotes
@@ -34,6 +48,15 @@
   (swl:san (strcat "done=" (itoa done) " skipped=" (itoa skipped) " failed=" (itoa failed)
                    (if ids (strcat " | ids=" (swl:join ids ",")) "")
                    (if (and note (/= note "")) (strcat " | " note) ""))))
+;; LESSONS A36: a c: command that only princs gives the writer an EMPTY payload. Every c:<task>-PLAN/-RUN/-CHECK ends
+;; with (swl:result-out "<task>" <line>): writes the line (sanitised to one line) to <swarm>/scripts/<task>.result.txt
+;; (overwrite) AND returns it. If the file cannot be opened the line is still returned, ending " | result-file=unwritable".
+;; (Named -out because swl:result above already builds the line: (swl:result-out "T" (swl:result 1 0 0 ids "ok")).)
+(defun swl:result-out (task str / f r)
+  (setq r (swl:san str))
+  (if (setq f (open (strcat (swl:swarm-dir) "scripts/" (vl-string-translate "/\\:*?<>|\"" "_________" task) ".result.txt") "w"))
+    (progn (write-line r f) (close f) r)
+    (strcat r " | result-file=unwritable")))
 
 ;; ---------------------------------------------------------------- boxes
 (defun swl:norm (p q)
@@ -56,6 +79,78 @@
 (defun swl:vtxbox (ed / xs ys)
   (foreach g ed (if (= (car g) 10) (setq xs (cons (cadr g) xs) ys (cons (caddr g) ys))))
   (if xs (list (apply 'min xs) (apply 'min ys) (apply 'max xs) (apply 'max ys))))
+;; x (ename, vla object or handle string) -> ename, or nil
+(defun swl:->ename (x)
+  (cond ((= (type x) 'ENAME) x)
+        ((= (type x) 'STR) (handent x))
+        ((= (type x) 'VLA-OBJECT) (vlax-vla-object->ename x))))
+;; x -> vla object, or nil when there is none (erased, or no ActiveX: headless Core Console)
+(defun swl:->obj (x / o)
+  (cond ((= (type x) 'VLA-OBJECT) x)
+        ((setq x (swl:->ename x))
+         (setq o (vl-catch-all-apply 'vlax-ename->vla-object (list x)))
+         (if (and o (not (vl-catch-all-error-p o))) o))))
+;; the A34 rule on a raw box: bottom = bbox top - max(bbox height, DXF 43). Pure LISP.
+(defun swl:mtext-rule (bb h43)
+  (list (car bb) (- (cadddr bb) (max (- (cadddr bb) (cadr bb)) (if (numberp h43) h43 0.0))) (caddr bb) (cadddr bb)))
+;; DXF-only MTEXT box (no ActiveX): insertion 10, attachment 71, width 42 (else 41), height 43; rotation ignored.
+;; DXF 43 can be stale (A34): this is the fallback when ActiveX is missing (headless tests), never preferred live.
+(defun swl:mtext-dxfbox (ed / p a w h x y)
+  (setq p (cdr (assoc 10 ed)) a (swl:dxf0 71 ed) w (swl:dxf0 42 ed) h (swl:dxf0 43 ed))
+  (if (<= w 0.0) (setq w (swl:dxf0 41 ed)))
+  (if (< a 1) (setq a 1))
+  (setq x (- (car p) (* w 0.5 (rem (1- a) 3)))
+        y (+ (cadr p) (* h 0.5 (/ (1- a) 3))))                         ; y = top of the text
+  (list x (- y h) (+ x w) y))
+;; MTEXT box by the A34 rule (LESSONS A29/A34, the M18-R4-T1 m4:mbox rule): vla bbox x-range and top, bottom =
+;; top - max(bbox height, DXF 43). The ONLY allowed MText measure; every task touching the same note uses it.
+;; x = ename, vla object or handle. Without ActiveX falls back to swl:mtext-dxfbox. nil if x is not an MTEXT.
+(defun swl:mtext-box (x / e ed o bb)
+  (setq e (swl:->ename x) ed (if e (entget e)))
+  (if (and ed (= (cdr (assoc 0 ed)) "MTEXT"))
+    (progn
+      (setq o (swl:->obj e) bb (if o (swl:vbox o)))
+      (swl:mtext-rule (if bb bb (swl:mtext-dxfbox ed)) (swl:dxf0 43 ed)))))
+(defun swl:mtext-bottom (x / b) (if (setq b (swl:mtext-box x)) (cadr b)))
+;; box of one entity (ename, vla object or handle), the same way for PLAN and CHECK: MTEXT by swl:mtext-box; others
+;; by the vla bbox when ActiveX is there, else from DXF: LINE ends, LWPOLYLINE vertices padded by the largest arc
+;; sagitta (|bulge| * half chord), CIRCLE centre +- r, TEXT by textbox (rotation 0 only), anything else its group
+;; 10 point(s) (an INSERT gives only its insertion point headless). nil if the entity is missing.
+(defun swl:ebox (x / e ed o bb typ pts sg n i p q s r tb)
+  (setq e (swl:->ename x) ed (if e (entget e)))
+  (if ed
+    (progn
+      (setq typ (cdr (assoc 0 ed)))
+      (cond
+        ((= typ "MTEXT") (swl:mtext-box e))
+        ((and (setq o (swl:->obj e)) (setq bb (swl:vbox o))) bb)
+        ((= typ "LINE") (swl:norm (cdr (assoc 10 ed)) (cdr (assoc 11 ed))))
+        ((= typ "LWPOLYLINE")
+         (foreach g ed
+           (cond ((= (car g) 10) (setq pts (cons (list (cadr g) (caddr g)) pts)))
+                 ((= (car g) 42) (setq sg (cons (cdr g) sg)))))
+         (setq pts (reverse pts) sg (reverse sg) n (length pts) i 0 s 0.0)
+         (while (< i n)
+           (setq p (nth i pts) q (nth (rem (1+ i) n) pts))
+           (if (and (nth i sg) (or (< i (1- n)) (= 1 (logand 1 (swl:dxf0 70 ed)))))
+             (setq s (max s (* (abs (nth i sg)) 0.5 (distance p q)))))
+           (setq i (1+ i)))
+         (if (setq bb (swl:vtxbox ed)) (swl:pad bb s)))
+        ((= typ "CIRCLE")
+         (setq p (cdr (assoc 10 ed)) r (cdr (assoc 40 ed)))
+         (list (- (car p) r) (- (cadr p) r) (+ (car p) r) (+ (cadr p) r)))
+        ((and (= typ "TEXT") (setq tb (textbox ed)))
+         (setq p (cdr (assoc 10 ed)))
+         (swl:norm (list (+ (car p) (car (car tb))) (+ (cadr p) (cadr (car tb))))
+                   (list (+ (car p) (car (cadr tb))) (+ (cadr p) (cadr (cadr tb))))))
+        (T (swl:vtxbox ed))))))
+;; LESSONS A32: one box for a whole note group (note + tag + cloud ...), called by BOTH the PLAN and the CHECK of a
+;; script so they test the same geometry. handles: list of handle strings (enames / vla objects also accepted).
+;; Returns the union box, or nil if any member is missing or has no box (the caller ABORTs: the group changed).
+(defun swl:group-box (handles / r b bad)
+  (foreach h handles
+    (if (setq b (swl:ebox h)) (setq r (if r (swl:union r b) b)) (setq bad T)))
+  (if (and r (not bad)) r))
 
 ;; ---------------------------------------------------------------- clash checks (crossing-aware)
 ;; segment p-q (2D) touches box b (an endpoint inside, or it crosses an edge)
@@ -66,13 +161,15 @@
               c3 (list (caddr b) (cadddr b)) c4 (list (car b) (cadddr b)))
         (or (inters p q c1 c2 T) (inters p q c2 c3 T) (inters p q c3 c4 T) (inters p q c4 c1 T)))))
 (defun swl:tst (op code x y) (list (cons -4 op) (list code x y 0.0)))
-;; ssget filter: LINEs in space (layout name, "Model") whose x-span covers [bx1,bx2] and y-span overlaps [by1,by2]
+;; ssget filter: LINEs in space (layout name, "Model") whose x-span overlaps [bx1,bx2] and y-span overlaps [by1,by2]
+;; (bbox overlap; swl:seghit then keeps only real crossings). 2026-11-09: was "x-span covers [bx1,bx2]", which missed
+;; a line crossing the box top-to-bottom or cutting a corner with no endpoint inside (found by test clash-sees-frame).
 (defun swl:spanflt (space bx1 by1 bx2 by2 / r)
   (setq r (list '(0 . "LINE") (cons 410 space) (cons -4 "<or")))
   (foreach xc (list (list 10 11) (list 11 10))
     (foreach yc (list (list 10 11) (list 11 10))
       (setq r (append r (list (cons -4 "<and"))
-                (swl:tst "<=,*,*" (car xc) bx1 0.0) (swl:tst ">=,*,*" (cadr xc) bx2 0.0)
+                (swl:tst "<=,*,*" (car xc) bx2 0.0) (swl:tst ">=,*,*" (cadr xc) bx1 0.0)
                 (swl:tst "*,<=,*" (car yc) 0.0 by2) (swl:tst "*,>=,*" (cadr yc) 0.0 by1)
                 (list (cons -4 "and>"))))))
   (append r (list (cons -4 "or>"))))
@@ -124,6 +221,18 @@
                 (setq hits (cons h hits))))
             (setq i (1+ i)))))
       (swl:uniq (reverse hits)))))
+;; LESSONS A35: swl:clash, but hits on any layer in exclude-layers (list of layer names, case-insensitive exact match,
+;; e.g. (list "FRAME")) do not count. Same return as swl:clash (handles, or (list "ABORT too-many")). Use it ONLY for
+;; cloud edges placed ON a border line; placing NEW text uses plain swl:clash (FRAME stays an obstacle).
+(defun swl:clash-ex (space b skip pad cap exclude-layers / hits ex r ed)
+  (setq hits (swl:clash space b skip pad cap) ex (mapcar 'strcase exclude-layers))
+  (if (and hits (= (car hits) "ABORT too-many"))
+    hits
+    (progn
+      (foreach h hits
+        (setq ed (swl:ent h))
+        (if (not (and ed (member (strcase (cdr (assoc 8 ed))) ex))) (setq r (cons h r))))
+      (reverse r))))
 
 ;; ---------------------------------------------------------------- tag / text spot scoring
 ;; cands: list of candidate boxes in preference order; clashfn: (lambda (box) -> list of hits).
@@ -161,6 +270,46 @@
 (defun swl:inside-vp (vp b / r)
   (setq r (nth 4 vp))
   (and (swl:inbox (list (car b) (cadr b)) r) (swl:inbox (list (caddr b) (cadddr b)) r)))
+;; LESSONS A33: containment with a tolerance, for geometry that is NOT being moved: box b (paper units) shrunk by tol
+;; on every side (nil = 0.10) must lie inside the viewport. A box smaller than 2*tol shrinks to its centre point.
+(defun swl:inside-vp-tol (vp b tol / cx cy)
+  (if (null tol) (setq tol 0.10))
+  (setq cx (/ (+ (car b) (caddr b)) 2.0) cy (/ (+ (cadr b) (cadddr b)) 2.0))
+  (swl:inside-vp vp (list (min cx (+ (car b) tol)) (min cy (+ (cadr b) tol))
+                          (max cx (- (caddr b) tol)) (max cy (- (cadddr b) tol)))))
+;; LESSONS A39/A50: enames of the floating viewports (DXF 69 > 1; 69 = 1 is the paper-space pseudo viewport) on
+;; layout lo. Pure DXF ("_X" + group 410), so it works headless (no layoutlist / ActiveX). nil = the layout never
+;; shows model space: report floating_viewports=0 and treat its model-space targets as off-sheet.
+(defun swl:floating-vps (lo / ss i e r)
+  (setq ss (ssget "_X" (list '(0 . "VIEWPORT") (cons 410 lo))) i 0)
+  (while (and ss (< i (sslength ss)))
+    (setq e (ssname ss i))
+    (if (> (swl:dxf0 69 (entget e)) 1) (setq r (cons e r)))
+    (setq i (1+ i)))
+  (reverse r))
+;; model-space window a VIEWPORT shows, from its entget data (centre = target 17 + view centre 12, height 45,
+;; width 40 * 45 / 41). Twisted (51): the bounding box of the rotated window (a little more: the safe side for
+;; on-sheet tests). A non-rectangular clip (340) counts as its rectangle. nil if the data is incomplete.
+(defun swl:vp-msbox (ed / tg vc vh w ph hw hh tw c s ex ey)
+  (setq tg (if (assoc 17 ed) (cdr (assoc 17 ed)) (list 0.0 0.0 0.0)) vc (cdr (assoc 12 ed))
+        vh (cdr (assoc 45 ed)) w (cdr (assoc 40 ed)) ph (cdr (assoc 41 ed)))
+  (if (and vc vh w ph (> ph 0.0))
+    (progn
+      (setq hh (/ vh 2.0) hw (/ (* w vh) (* 2.0 ph)) tw (swl:dxf0 51 ed) c (abs (cos tw)) s (abs (sin tw))
+            ex (+ (* hw c) (* hh s)) ey (+ (* hw s) (* hh c)))
+      (list (- (+ (car tg) (car vc)) ex) (- (+ (cadr tg) (cadr vc)) ey)
+            (+ (car tg) (car vc) ex) (+ (cadr tg) (cadr vc) ey)))))
+;; T if any floating viewport on any paper layout shows (overlaps) the model-space box msbox; nil = off-sheet: the
+;; target never plots, report "off-sheet" instead of changing it (A39/A50). Works headless.
+(defun swl:on-sheet-p (msbox / ss i ed vb hit)
+  (setq ss (ssget "_X" '((0 . "VIEWPORT"))) i 0)
+  (while (and ss (not hit) (< i (sslength ss)))
+    (setq ed (entget (ssname ss i)))
+    (if (and (/= (strcase (cdr (assoc 410 ed))) "MODEL") (> (swl:dxf0 69 ed) 1)
+             (setq vb (swl:vp-msbox ed)) (swl:ovl vb msbox))
+      (setq hit T))
+    (setq i (1+ i)))
+  hit)
 
 ;; ---------------------------------------------------------------- revision clouds (clockwise, vertex-sized)
 (defun swl:side (p q chord / L n i r f)

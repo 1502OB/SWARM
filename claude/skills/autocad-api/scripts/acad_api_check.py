@@ -1,6 +1,6 @@
 """Check AutoLISP / ActiveX (vla-) / DXF names against this skill's AutoCAD 2027 references.
 
-    python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py NAME [NAME ...]
+    python ~/.claude/skills/autocad-api/scripts/acad_api_check.py NAME [NAME ...]
     python .../acad_api_check.py --lsp script.lsp [more.lsp ...] [--with lib.lsp]   (every call in the file)
     python .../acad_api_check.py --object Line                       (all members, inherited ones too)
     python .../acad_api_check.py --dxf LWPOLYLINE                    (group codes of one entity)

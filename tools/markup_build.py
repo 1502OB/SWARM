@@ -1,7 +1,7 @@
 """Build a QAQC markup PDF and change list from a run folder (shared tool; generalized from retreat/qaqc1/build/markup.py).
 
 Usage:
-  python C:/Users/Jeremy/swarm/tools/markup_build.py <run_dir> --tag "QAQC #1" --name <file prefix>
+  python ~/swarm/tools/markup_build.py <run_dir> --tag "QAQC #1" --name <file prefix>
          [--sheets P0.01,P0.02,...] [--src src] [--include-rejected]
 
 Reads, under <run_dir>:

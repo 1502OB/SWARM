@@ -1,6 +1,6 @@
 """Content check of a task.json against the model index cache, before any writer runs (plan -> VALIDATE -> execute).
 
-    python C:/Users/Jeremy/swarm/tools/check_task.py <task.json> [<task.json> ...]
+    python ~/swarm/tools/check_task.py <task.json> [<task.json> ...]
 
 validate.py checks the SHAPE (schemas/task.schema.json); this checks the CONTENT against cache/<app>-index.json:
   - the index is for the task's document and is not invalidated;
@@ -9,12 +9,14 @@ validate.py checks the SHAPE (schemas/task.schema.json); this checks the CONTENT
     list (partial index: text notes, plan views, MEP elements) is UNVERIFIABLE (warning: the scout must confirm it).
 Exit 0 = no errors (warnings allowed), 1 = errors, 2 = usage / unreadable file.
 """
+import os
 import json
 import re
 import sys
 from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from swarm_paths import SWARM  # noqa: E402
 
-SWARM = Path("C:/Users/Jeremy/swarm")
 APP_INDEX = {"revit": "revit-index.json", "acad": "acad-index.json"}
 # which index lists an operation's targets should be in (by operation-name keywords)
 OP_CATEGORY = [("sheet", "sheets"), ("revision-cloud", "revision_clouds"), ("revision", "revisions"),

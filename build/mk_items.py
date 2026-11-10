@@ -1,7 +1,11 @@
 import json
 src = "25139_Bakersfield_CA_Pad 10 ASMEP_10-09-26_MCG Review Comments.pdf"
 base = "25139_Bakersfield_CA_Pad_10_ASMEP_10-09-26_MCG_Review_Comments-p%s.png"
-d = json.load(open('C:/Users/Jeremy/swarm/manifests/doc_scan.json'))['files'][0]
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from swarm_paths import SWARM, fwd  # noqa: E402
+S = fwd(SWARM) + "/"
+d = json.load(open(S + 'manifests/doc_scan.json'))['files'][0]
 by = {i['id'].split('-p', 1)[1]: i for i in d['items']}
 S = {1: 'G101', 8: 'A101', 10: 'A141', 11: 'A200', 12: 'A-301', 22: 'S201', 27: 'S304', 32: None, 33: 'M201', 45: 'E400', 52: 'P201', 53: 'P300'}
 NP = "not plumbing"
@@ -53,7 +57,7 @@ for n, (k, route, loc, rs, calc, rr) in enumerate(I, 1):
     pg = a['page']
     items.append({"id": "MCG-%03d" % n, "source_file": src, "page": pg, "sheet_number": S[pg], "location": loc,
         "comment": a['content'], "comment_source": "bluebeam_mcp", "author": a['author'],
-        "crop": "C:/Users/Jeremy/swarm/crops/" + base % k, "route": route, "route_reason": rr,
+        "crop": S + "crops/" + base % k, "route": route, "route_reason": rr,
         "needs_calc": calc, "status": "needs_review", "review_reason": rs, "markup_id": a['id'],
         "applies_to": ["Pad 10", "Pad 11", "Pad 12"]})
 doc = {"project": "Riverview Marketplace, Pad 10 (Shell Building)", "project_number": "25.139.42 (file prefix 25139)",
@@ -66,6 +70,6 @@ doc = {"project": "Riverview Marketplace, Pad 10 (Shell Building)", "project_num
  "tool_path": "bluebeam_mcp (open_file + list_markups_in_pdf); PyMuPDF scan used for crops (184 annotations, matched)",
  "sheet_number_source": "Bluebeam page labels; page 32 label M103 is a duplicate so sheet left null; page 11 label A200 differs from text candidate A201",
  "not_itemized": "%d of 184 markups itemized (all text comments). Remaining are blank-comment graphics (clouds, lines, arrows, snapshots, ink), REVISED tags (NNorouzi), and label-only callouts (R7, R14, S, G, F36). Page 10 and 22 ink strokes not decoded as handwriting." % len(items),
- "doc_scan": "C:/Users/Jeremy/swarm/manifests/doc_scan.json"}
-json.dump({"document": doc, "items": items}, open('C:/Users/Jeremy/swarm/manifests/work_items.json', 'w'), indent=1)
+ "doc_scan": S + "manifests/doc_scan.json"}
+json.dump({"document": doc, "items": items}, open(S + 'manifests/work_items.json', 'w'), indent=1)
 print(len(items), sum(i['status'] == 'needs_review' for i in items))

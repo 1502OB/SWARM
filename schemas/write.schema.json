@@ -68,6 +68,15 @@
         "string",
         "null"
       ]
+    },
+    "result_source": {
+      "type": "string",
+      "enum": [
+        "returned",
+        "file",
+        "inferred"
+      ],
+      "description": "where the RUN line came from: returned = the c:<task>-RUN return value, file = <task>.result.txt, inferred = re-queried by the writer because the payload was empty (LESSONS A36)"
     }
   }
 }

@@ -1,9 +1,10 @@
 """Write references/core.md: the AutoLISP / vla names our swarm .lsp files actually call, most-used first, with
 the signature from this skill and firm notes (facts that cost failed runs; source in brackets).
 
-    python gen_core.py C:/Users/Jeremy/swarm        (scans **/*.lsp except build/ and snapshots/)
+    python gen_core.py ~/swarm        (scans **/*.lsp except build/ and snapshots/)
 """
 import collections
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -57,6 +58,15 @@ AVOID = [
 ]
 
 
+def shown(p):
+    """~/... under the user's home (portable in the generated reference), else the absolute path."""
+    a, home = Path(os.path.abspath(p)), Path(os.path.abspath(Path.home()))
+    try:
+        return "~/" + a.relative_to(home).as_posix()
+    except ValueError:
+        return a.as_posix()
+
+
 def main(root):
     root = Path(root)
     ck = ac.Checker()
@@ -79,7 +89,7 @@ def main(root):
            "write-line", "read-line", "close", "load", "startapp")
     rows = [n for n, c in count.most_common() if (n.startswith(api) and c >= 2) or n in NOTES][:110]
     out = [f"# Core AutoLISP / ActiveX names used by our swarm scripts", "",
-           f"Generated {date.today()} by scripts/gen_core.py from {len(lsps)} .lsp files under {root} (calls counted"
+           f"Generated {date.today()} by scripts/gen_core.py from {len(lsps)} .lsp files under {shown(root)} (calls counted"
            " in function position; drawing / ActiveX / file API only, list and math primitives left out). Look here first; everything else: the checker, activex-INDEX.md,"
            " autolisp-functions.md, dxf-entities.md. Notes are facts that cost failed runs or were verified in the"
            " 2027 type library.", "",
@@ -102,4 +112,4 @@ def main(root):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "C:/Users/Jeremy/swarm")
+    main(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SWARM_HOME") or str(Path.home() / "swarm"))

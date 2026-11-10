@@ -1,8 +1,8 @@
 """Check Revit API members against this skill's references (dll2llm output for Revit 2025).
 
-    python C:/Users/Jeremy/.claude/skills/revit-api/scripts/revit_api_check.py Type.Member [Type.Member ...]
-    python C:/Users/Jeremy/.claude/skills/revit-api/scripts/revit_api_check.py --file <list.txt>   (one per line, "#" comments)
-    python C:/Users/Jeremy/.claude/skills/revit-api/scripts/revit_api_check.py --type Viewport     (list a type's members)
+    python ~/.claude/skills/revit-api/scripts/revit_api_check.py Type.Member [Type.Member ...]
+    python ~/.claude/skills/revit-api/scripts/revit_api_check.py --file <list.txt>   (one per line, "#" comments)
+    python ~/.claude/skills/revit-api/scripts/revit_api_check.py --type Viewport     (list a type's members)
 
 Types may be short (View) or full (Autodesk.Revit.DB.View). Members are looked up on the type and then up its
 "Inherits:" chain, because dll2llm documents a member only on the type that declares it (Viewport.Pinned is on

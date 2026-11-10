@@ -1,6 +1,6 @@
 """Dump a .docx (letter) to plain text so agents can Read it (the Read tool cannot open .docx).
 
-Usage: python C:/Users/Jeremy/swarm/tools/docx_text.py <in.docx> <out.txt>
+Usage: python ~/swarm/tools/docx_text.py <in.docx> <out.txt>
 Paragraphs in order (numbered "[p<N>]"), then tables as " | "-joined rows. Highlighted runs are wrapped in {{HL: }}.
 """
 import sys

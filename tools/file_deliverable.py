@@ -1,21 +1,24 @@
 """Copy one approved deliverable to its project folder for filer. Never overwrites.
 
-    python C:/Users/Jeremy/swarm/tools/file_deliverable.py "<source file>" "<destination folder>" "<new file name>" <project>
+    python ~/swarm/tools/file_deliverable.py "<source file>" "<destination folder>" "<new file name>" <project>
 
-The source must be under C:/Users/Jeremy/swarm/output/. If <destination>/<new name> exists, a suffix _2, _3, ... is
+The source must be under ~/swarm/output/. If <destination>/<new name> exists, a suffix _2, _3, ... is
 added before the extension (and reported). Appends {"file","source","destination","renamed_from_conflict",
-"timestamp"} to C:/Users/Jeremy/swarm/ledger/<project>.deliverables.json (a JSON list; created if missing).
+"timestamp"} to ~/swarm/ledger/<project>.deliverables.json (a JSON list; created if missing).
 Prints the ledger entry as JSON. Exit 0 = copied, 1 = refused / failed.
 """
+import os
 import json
 import re
 import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from swarm_paths import SWARM  # noqa: E402
 
-OUTPUT = Path("C:/Users/Jeremy/swarm/output").resolve()
-LEDGER = Path("C:/Users/Jeremy/swarm/ledger")
+OUTPUT = (SWARM / "output").resolve()
+LEDGER = SWARM / "ledger"
 
 
 def fail(msg):

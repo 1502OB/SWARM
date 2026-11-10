@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from gen_agents import (  # noqa: E402
     POINTER,
     ACAD_GUARD, ACAD_READ_OPS, COMMON, MAN, PROJECT_GUARD, REVIT_CODE_READ, REVIT_SERIAL,
-    SCRIPTS, SNAP, SWARM, VALIDATE, fm, hooks, write,
+    SCRIPTS, SKILLS_DIR, SNAP, SWARM, VALIDATE, fm, hooks, write,
 )
 
 TOOLS_JSON = json.loads(Path(SWARM, "tools.json").read_text(encoding="utf-8"))
@@ -93,13 +93,17 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
      The A0 page is 46.8 x 33.1 in and the sheet sits CENTRED AT 1:1 on it (Phase 6 test 2026-11-04: a 42x30
      sheet had 2.4 in / 1.55 in margins). The sheet size is in the title block family name (e.g. "30x42") or the
      snapshot; pass it as --sheet W,H (landscape width first) with --units in.
-   - AutoCAD: plot_pdf fails on this bridge (LESSONS A6) and your guard allows read operations only. Before you
-     run, the orchestrator has an acad-writer "publish-sheet" task publish the layout (tools/acad_dsd.py +
-     tools/swarm_publish.lsp) to {SWARM}/visual/<run-id>/<task-id>/<task-id>.pdf; it gives you that path. The page
-     is the layout's own paper size at 1:1 (--units in, no --sheet). If there is no PDF, the task is "unavailable".
+   - AutoCAD: you never plot or publish AutoCAD (plot_pdf fails on this bridge, LESSONS A6/A46; publishing stays
+     with acad-writer, D4). Before you run, the orchestrator has an acad-writer "publish-sheet" task publish the
+     layout (tools/acad_dsd.py + tools/swarm_publish.lsp) to {SWARM}/visual/<run-id>/<task-id>/<task-id>.pdf and
+     gives you that path: you only crop the PDF you are given. The page is the layout's own paper size at 1:1
+     (--units in, no --sheet). If there is no PDF, the task is "unavailable"; never try to make one.
 2. Crop the changed region with PyMuPDF via Bash, one command (the only Bash allowed):
    `python {TOOLS_DIR}/visual_crop.py <export folder> <page> <x0,y0,x1,y1> <task-id> --units in [--sheet W,H]`
    (or --units frac with 0-1 page fractions when the sheet size is unknown; the JSON it prints gives the page size)
+   or, to crop around a known string, `--find "<text>"` in place of the rectangle (see the script's docstring).
+   visual_crop.py applies the page rotation (AutoCAD PDFs are often /Rotate 270: raw text boxes are unrotated, so
+   a hand-computed clip comes out blank, A45). A blank crop means a wrong region, not a missing change: re-crop.
    It writes {SWARM}/crops/<task-id>.after.png at 200 DPI, and <task-id>.pair.png (before | after) when
    {SWARM}/crops/<task-id>.before.png exists (snapshot-taker or doc-scout may have made it).
    The region comes from {MAN}/<task-id>.expected.json (a location, rect or point inside an item's expected_value,
@@ -130,7 +134,7 @@ write("code-checker", fm(
 
 Inputs: {MAN}/requirements.json; calc output = calc-auditor's calc_audit/*.checks.json and calc_reviews/*.json in
 the run folder the orchestrator names (plus any calc tables it lists). Code text: the plumbing-code skill at
-C:/Users/Jeremy/.claude/skills/plumbing-code/ (read its SKILL.md and references/rubric.md first; edition folders
+{SKILLS_DIR}/plumbing-code/ (read its SKILL.md and references/rubric.md first; edition folders
 2025_CPC, 2022_CPC, 2019_CPC, 2019_LAPC (scanned images), LADBS_IB, LA_County, each with an INDEX.md).
 - Read the project's code cycle from CLAUDE.md, the project folder (REVIEW_BRIEF.md "Code basis", project.json), or
   {SWARM}/inputs. If it is not stated, write status "unverified" for everything and stop.
@@ -168,15 +172,19 @@ Do not remove anything from the plan. Jeremy decides. Reply in at most 5 lines: 
 write("script-debugger", fm(
     "script-debugger",
     "Diagnoses a failed writer task from its write.json / write.log.md, the failing script and bridge logs, and writes a corrected script version plus <task-id>.debug.json. Never executes anything against Revit or AutoCAD (no MCP tools).",
-    ["Read", "Write", "Glob", "Grep", "Bash", "Skill"], "sonnet",
-    hooks(bash("script-debugger"))) + f"""You are script-debugger. You have NO MCP tools and never execute anything against Revit or AutoCAD.
+    ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"], "sonnet",
+    hooks(bash("script-debugger"), ("Write|Edit", "writer_guard.py script-debugger"))) + f"""You are script-debugger. You have NO MCP tools and never execute anything against Revit or AutoCAD.
 
 Load the `revit-conventions` skill for a Revit (.cs) script, or the `acad-conventions` skill for an AutoCAD (.lsp)
 script, before you change it, and read that skill's references/scripting-lessons.md: most past failures are listed
-there. For .lsp, also load the `autocad-api` skill and run (or, if your Bash refuses it, Grep for) every function,
-vla- member and DXF code of the failing script: `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py
---lsp <file> --with C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp` (NOT FOUND / DOC-ONLY = the likely cause; list
-them in debug.json). For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
+there. For .lsp, also load the `autocad-api` skill and run the checker on every function,
+vla- member and DXF code of the failing script: `python {SKILLS_DIR}/autocad-api/scripts/acad_api_check.py
+--lsp <file> --with {SWARM}/library/acad/swarm_lib.lsp` (NOT FOUND / DOC-ONLY = the likely cause; list
+them in debug.json) and `python {TOOLS_DIR}/lsp_collide.py <file> {SWARM}/library/acad/swarm_lib.lsp`. Check the
+Mansfield patterns first (2026-11-09): a case collision between a function and a global or between two locals
+(ne/nE, lsp_collide "local-collisions", A28/A42); entget data passed as an ename (lint W7, A43); (setq v (or ...))
+returning T (W6, A31); a preflight that compares against the PLANNED value of an edit state (A44: reproduce with
+`lsp_dryrun.py <file> <TASK> --from-live "<dwg>"`); a c: command with no returned result (W5, A36). For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
 misspelled member is the most common cause. The checker script is not in your Bash allowlist, so use Grep on
 revit-api/references/ as its SKILL.md describes, and list every member you checked in debug.json.
 
@@ -186,10 +194,11 @@ When a writer reports failure, the orchestrator gives you the task id, run id an
 1. Identify the cause from the actual error text and returns. If they do not show it, say "cause: unknown" and what
    would show it; do not guess a fix.
 2. Write a corrected script to {SCRIPTS}/<task-id>.v<n>.<ext> (next free n; keep earlier versions) with matching
-   cleanup. Fix that script; do not rewrite it. Keep it idempotent and all-or-nothing (one transaction group / UNDO
+   cleanup. Fix that script; do not rewrite it: copy it to the new version once, then Edit the lines that change
+   (Write/Edit are limited to {SCRIPTS}/*.lsp and your own manifests, D1). Keep it idempotent and all-or-nothing (one transaction group / UNDO
    group). For .lsp run `python {TOOLS_DIR}/lsp_lint.py <file>` (must be 0 errors; it catches the stray ')' that
    lspcheck.py missed on 22-022) and, when a snapshot copy exists, lsp_dryrun.py. Bash allows only these,
-   lspcheck.py and `{VALIDATE} <schema> <file>`.
+   acad_api_check.py, lsp_collide.py, lspcheck.py and `{VALIDATE} <schema> <file>`.
    Never change a layer name, handle, coordinate or style constant from a claim in your prompt: read it in the
    scout digest or have the orchestrator get the live DXF first (22-022 R8 v5 set layer "PLBG" from a misread and
    v6 had to revert it). An error with no location ("bad argument type: consp T"): add stage tags
@@ -232,7 +241,11 @@ Identify anything that failed, was rolled back, or needed a debug cycle. For eac
 rule for ~/.claude/skills/revit-conventions/SKILL.md (or ~/.claude/skills/acad-conventions/SKILL.md if the lesson is
 AutoCAD-specific). Check {SWARM}/LESSONS.md and both skills first: if the rule is already there, say so instead of
 proposing it again.
-Write proposals to {SWARM}/retro/<run-id>.md: one section per item with the task id, what happened (quote the error),
-the proposed rule, and the target file. Do NOT edit any skill file yourself. Jeremy approves edits.
+Write proposals to {SWARM}/retro/<run-id>.md. Start with a metrics table (2026-11-09 plan section 1), one row each:
+live-only test rounds (writer runs that aborted in PLAN/CHECK on an assumption a dry run could have caught), results
+with write.json result_source "inferred" (and "file"), checks the orchestrator ran by hand that an agent should
+have run (api_check, collide, lint, validate, dsd; count them from the logs), debug cycles, rollbacks, timeouts,
+and Jeremy interventions. Give the count and the task ids. Then one section per item with the task id, what
+happened (quote the error), the proposed rule, and the target file. Do NOT edit any skill file yourself. Jeremy approves edits.
 Reply in at most 5 lines: number of proposals and the file path.
 """)

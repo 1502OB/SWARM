@@ -1,5 +1,8 @@
 ;;; test_swarm_lib.lsp - tests for swarm_lib.lsp, run headless on a scratch drawing copy:
-;;;   python C:/Users/Jeremy/swarm/tools/lsp_dryrun.py C:/Users/Jeremy/swarm/library/acad/test_swarm_lib.lsp <any.dwg> SWLTEST --run
+;;;   (from the swarm root, i.e. SWARM_HOME or %USERPROFILE%/swarm)
+;;;   python tools/lsp_dryrun.py library/acad/test_swarm_lib.lsp <scratch copy of any sheet .dwg> SWLTEST --run
+;;; The drawing should have a paper layout with a floating viewport (e.g. a copy of a backups/<run>/P1.03 sheet) so the
+;;; floating-vps / on-sheet-p checks test real viewports; never point it at an L: original (the tool copies it anyway).
 ;;; PLAN = pure-LISP tests; RUN = tests that entmake test geometry far from the drawing (x=1e6) on the copy only.
 ;;; Each returns "pass=<n> fail=<n> | <failed names>". ActiveX-only helpers ([AX]) are not tested here.
 
@@ -10,7 +13,7 @@
   (strcat "pass=" (itoa SWLT:PASS) " fail=" (itoa SWLT:FAIL)
           (if SWLT:BAD (strcat " | failed: " (swl:join (reverse SWLT:BAD) ",")) "")))
 
-(defun c:SWLTEST-PLAN (/ vp b)
+(defun c:SWLTEST-PLAN (/ vp b d ed)
   (setq SWLT:PASS 0 SWLT:FAIL 0 SWLT:BAD nil)
   (swlt:check "join" (= (swl:join (list "a" "b" "c") ",") "a,b,c"))
   (swlt:check "join-empty" (= (swl:join nil ",") ""))
@@ -43,9 +46,27 @@
            (list 5 5 6 6)))
   (swlt:check "queue-refuses-erase" (wcmatch (swl:queue-command "_.ERASE ALL ") "ABORT*"))
   (swlt:check "words" (equal (swl:words "_.-XREF A file.dwg") (list "_.-XREF" "A" "file.dwg")))
+  ;; 2026-11-09 helpers (A32-A50)
+  (setq d (swl:swarm-dir))
+  (swlt:check "swarm-dir-slashes" (and (= (substr d (strlen d)) "/") (not (vl-string-search "\\" d))))
+  (swlt:check "swarm-dir-default" (or (getenv "SWARM_HOME")
+                                      (= (strcase d) (strcase (strcat (vl-string-translate "\\" "/" (getenv "USERPROFILE")) "/swarm/")))))
+  ;; A34 rule: top 20, bbox height 2 but DXF 43 = 5 -> bottom 15; bbox taller than 43 -> bbox bottom; negative 43 ignored
+  (swlt:check "mtext-rule-43" (equal (swl:mtext-rule (list 0.0 18.0 5.0 20.0) 5.0) (list 0.0 15.0 5.0 20.0) 1e-9))
+  (swlt:check "mtext-rule-bbox" (equal (swl:mtext-rule (list 0.0 10.0 5.0 20.0) 3.0) (list 0.0 10.0 5.0 20.0) 1e-9))
+  (swlt:check "mtext-rule-neg43" (equal (swl:mtext-rule (list 0.0 10.0 5.0 20.0) -2775.0) (list 0.0 10.0 5.0 20.0) 1e-9))
+  ;; A33: vp paper box (5 5 15 15); a box 0.04 outside fails plain, passes with the default 0.10 tolerance
+  (swlt:check "inside-vp-tol-default" (and (not (swl:inside-vp vp (list 4.96 6 8 8))) (swl:inside-vp-tol vp (list 4.96 6 8 8) nil)))
+  (swlt:check "inside-vp-tol-too-far" (not (swl:inside-vp-tol vp (list 4.5 6 8 8) nil)))
+  (swlt:check "inside-vp-tol-explicit" (and (swl:inside-vp-tol vp (list 4.5 6 8 8) 0.6) (not (swl:inside-vp-tol vp (list 4.5 6 8 8) 0.4))))
+  (swlt:check "inside-vp-tol-tiny-box" (swl:inside-vp-tol vp (list 14.95 6 15.05 6.1) nil))
+  (setq ed (list (cons 0 "VIEWPORT") (list 10 10.0 10.0 0.0) (list 12 100.0 200.0 0.0) (list 17 0.0 0.0 0.0)
+                 (cons 40 10.0) (cons 41 5.0) (cons 45 10.0)))
+  (swlt:check "vp-msbox" (equal (swl:vp-msbox ed) (list 90.0 195.0 110.0 205.0) 1e-9))
+  (swlt:check "vp-msbox-twist-90" (equal (swl:vp-msbox (append ed (list (cons 51 (/ pi 2.0))))) (list 95.0 190.0 105.0 210.0) 1e-9))
   (swlt:report))
 
-(defun c:SWLTEST-RUN (/ x0 l1 l2 t1 h1 c ed ck hits)
+(defun c:SWLTEST-RUN (/ x0 l1 l2 t1 h1 c ed ck hits m1 m2 h43 mb l3 gb lf l4 l5 l6 hf h4 fn rs f ln ln2 lo fv vb cx cy vr)
   (setq SWLT:PASS 0 SWLT:FAIL 0 SWLT:BAD nil x0 1000000.0)
   ;; two lines: one crossing the test box, one far away; a text with known values
   (setq l1 (progn (entmake (list '(0 . "LINE") '(410 . "Model") '(8 . "0") (list 10 (- x0 5) 1.0 0.0) (list 11 (+ x0 5) 1.0 0.0))) (entlast)))
@@ -68,6 +89,70 @@
                (swlt:check "cloud-clockwise-closed" (car ck))
                (swlt:check "cloud-vertex-box" (equal (cadr ck) (list (- x0 0.1) 29.9 (+ x0 2.1) 31.1) 1e-6))))
   (swlt:check "cloud-check-rejects-wrong-bulge" (if c (not (car (swl:cloud-check (entget c) 0.52))) nil))
-  (swlt:report))
+  ;; ---- 2026-11-09 helpers (A32-A50)
+  ;; MTEXT: top-left attachment at y=100 and bottom-left at y=50; bottom = top - max(bbox h, DXF 43)
+  (setq m1 (progn (entmake (list '(0 . "MTEXT") '(100 . "AcDbEntity") '(410 . "Model") '(8 . "0") '(100 . "AcDbMText")
+                                 (list 10 x0 100.0 0.0) '(40 . 2.0) '(41 . 50.0) '(71 . 1) '(1 . "SWLTEST NOTE")))
+                  (entlast)))
+  (setq m2 (progn (entmake (list '(0 . "MTEXT") '(100 . "AcDbEntity") '(410 . "Model") '(8 . "0") '(100 . "AcDbMText")
+                                 (list 10 (+ x0 10.0) 50.0 0.0) '(40 . 2.0) '(41 . 50.0) '(71 . 7) '(1 . "SWLTEST NOTE")))
+                  (entlast)))
+  (setq h43 (swl:dxf0 43 (entget m1)) mb (swl:mtext-box m1))
+  (swlt:check "mtext-h43-positive" (> h43 0.0))
+  (swlt:check "mtext-bottom-top-attach" (equal (swl:mtext-bottom m1) (- 100.0 (max h43 (- (cadddr mb) (cadr mb)))) 1e-6))
+  (swlt:check "mtext-bottom-top-attach-value" (equal (swl:mtext-bottom m1) (- 100.0 h43) 1e-6))
+  (swlt:check "mtext-bottom-bottom-attach" (equal (swl:mtext-bottom m2) 50.0 1e-6))
+  (swlt:check "mtext-bottom-by-handle" (equal (swl:mtext-bottom (cdr (assoc 5 (entget m1)))) (swl:mtext-bottom m1) 1e-9))
+  (swlt:check "mtext-bottom-not-mtext" (null (swl:mtext-bottom l1)))
+  ;; group box: line + mtext + bulged cloud; and nil if a member is missing
+  (setq l3 (progn (entmake (list '(0 . "LINE") '(410 . "Model") '(8 . "0") (list 10 (- x0 3.0) 95.0 0.0) (list 11 (- x0 1.0) 97.0 0.0))) (entlast)))
+  (setq gb (swl:group-box (list (cdr (assoc 5 (entget l3))) (cdr (assoc 5 (entget m1))))))
+  (swlt:check "group-box-union" (and gb (equal gb (list (- x0 3.0) (min 95.0 (cadr mb)) (caddr mb) 100.0) 1e-6)))
+  (swlt:check "group-box-missing-member" (null (swl:group-box (list (cdr (assoc 5 (entget l3))) "FFFFFF"))))
+  (if c (swlt:check "ebox-cloud-covers-arcs"
+          (and (setq gb (swl:ebox c)) (< (car gb) (- x0 0.1)) (> (cadddr gb) 31.1))))
+  ;; clash-ex: a FRAME line and a layer-0 line both cross the box; FRAME is excluded, layer 0 still counts
+  (setq lf (progn (entmake (list '(0 . "LINE") '(410 . "Model") '(8 . "FRAME") (list 10 (- x0 5) 61.0 0.0) (list 11 (+ x0 5) 61.0 0.0))) (entlast)))
+  (setq l4 (progn (entmake (list '(0 . "LINE") '(410 . "Model") '(8 . "0") (list 10 x0 55.0 0.0) (list 11 x0 65.0 0.0))) (entlast)))
+  (setq hf (cdr (assoc 5 (entget lf))) h4 (cdr (assoc 5 (entget l4))))
+  (setq hits (swl:clash "Model" (list (- x0 1) 60.0 (+ x0 1) 62.0) nil 0.0 2000))
+  (swlt:check "clash-sees-frame" (and (member hf hits) (member h4 hits)))
+  (setq hits (swl:clash-ex "Model" (list (- x0 1) 60.0 (+ x0 1) 62.0) nil 0.0 2000 (list "frame")))
+  (swlt:check "clash-ex-drops-frame" (and (not (member hf hits)) (member h4 hits)))
+  ;; corner cut (no endpoint inside, spans neither the full width nor height) and a near miss beside the corner
+  (setq l5 (progn (entmake (list '(0 . "LINE") '(410 . "Model") '(8 . "0") (list 10 (- x0 2.0) 61.0 0.0) (list 11 x0 63.0 0.0))) (entlast)))
+  (setq l6 (progn (entmake (list '(0 . "LINE") '(410 . "Model") '(8 . "0") (list 10 (- x0 2.0) 61.5 0.0) (list 11 (- x0 0.5) 63.5 0.0))) (entlast)))
+  (setq hits (swl:clash "Model" (list (- x0 1) 60.0 (+ x0 1) 62.0) nil 0.0 2000))
+  (swlt:check "clash-corner-cut" (member (cdr (assoc 5 (entget l5))) hits))
+  (swlt:check "clash-near-miss" (not (member (cdr (assoc 5 (entget l6))) hits)))
+  (swlt:check "clash-ex-abort-shape" (equal (swl:clash-ex "Model" (list (- x0 1) 60.0 (+ x0 1) 62.0) nil 0.0 0 (list "FRAME"))
+                                             (list "ABORT too-many")))
+  ;; result-out: file written (one line) and the same string returned; the test file is deleted again
+  (setq fn (strcat (swl:swarm-dir) "scripts/SWLTEST-RESULT.result.txt"))
+  (setq rs (swl:result-out "SWLTEST-RESULT" (swl:result 1 0 0 (list "AB") (strcat "x" (chr 10) "y"))))
+  (swlt:check "result-out-returns" (= rs "done=1 skipped=0 failed=0 | ids=AB | x | y"))
+  (setq f (open fn "r") ln (if f (read-line f)) ln2 (if f (read-line f)))
+  (if f (close f))
+  (swlt:check "result-out-file" (and (= ln rs) (null ln2)))
+  (swl:result-out "SWLTEST-RESULT" "second")
+  (setq f (open fn "r") ln (if f (read-line f)))
+  (if f (close f))
+  (swlt:check "result-out-overwrites" (= ln "second"))
+  (vl-file-delete fn)
+  ;; floating viewports on the current layout (the copy's own viewports) and on-sheet-p through them
+  (setq lo (getvar "CTAB") fv (if (/= (strcase lo) "MODEL") (swl:floating-vps lo)))
+  (swlt:check "floating-vps-all-gt1" (vl-every (function (lambda (e) (> (cdr (assoc 69 (entget e))) 1))) fv))
+  (swlt:check "floating-vps-model-none" (null (swl:floating-vps "Model")))
+  (swlt:check "floating-vps-no-layout" (null (swl:floating-vps "NO SUCH LAYOUT")))
+  (swlt:check "on-sheet-far-box" (not (swl:on-sheet-p (list 1.0e9 1.0e9 (+ 1.0e9 1.0) (+ 1.0e9 1.0)))))
+  (if fv
+    (progn
+      (setq vb (swl:vp-msbox (entget (car fv))) cx (/ (+ (car vb) (caddr vb)) 2.0) cy (/ (+ (cadr vb) (cadddr vb)) 2.0))
+      (swlt:check "on-sheet-vp-centre" (swl:on-sheet-p (list (- cx 0.5) (- cy 0.5) (+ cx 0.5) (+ cy 0.5))))
+      ;; vp-msbox agrees with swl:vp / swl:box->ms (untwisted viewports): the paper box maps to the same model box
+      (setq vr (swl:vp (cdr (assoc 5 (entget (car fv)))) lo))
+      (swlt:check "vp-msbox-matches-box->ms" (or (= (type vr) 'STR) (equal (swl:box->ms vr (nth 4 vr)) vb 1e-6))))
+    (swlt:check "on-sheet-needs-a-floating-viewport (use a sheet DWG)" nil))
+  (strcat (swlt:report) " | layout=" lo " floating=" (itoa (length fv))))
 
 (princ)

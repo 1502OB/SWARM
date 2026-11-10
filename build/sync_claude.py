@@ -16,8 +16,11 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent / "claude"
-LIVE = Path.home() / ".claude"
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from swarm_paths import SWARM, CLAUDE  # noqa: E402  (SWARM_HOME / CLAUDE_CONFIG_DIR overrides)
+
+REPO = SWARM / "claude"
+LIVE = CLAUDE
 SKILLS = ["acad-conventions", "revit-conventions", "revit-api", "autocad-api", "plumbing-code"]
 SKIP_DIRS = {"__pycache__"}
 

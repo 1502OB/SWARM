@@ -6,9 +6,14 @@ Exit code 2 blocks the call.
 import json
 import re
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paths import SWARM, fwd, path_re  # noqa: E402  (2026-11-09: no hard-coded user folder)
+
+XL_OLE = fwd(SWARM / "tools/xl_ole.ps1")
 ALLOW = re.compile(
-    r'^powershell(\.exe)? -NoProfile -ExecutionPolicy Bypass -File "?C:/Users/Jeremy/swarm/tools/xl_ole\.ps1"? '
+    r'^powershell(\.exe)? -NoProfile -ExecutionPolicy Bypass -File "?' + path_re(SWARM, "tools/xl_ole.ps1") + r'"? '
     r'(status|read|range|summary|set|copyfmt|close|oleopen|restore)( ("[^"$`;&|<>]*"|[^\s"$`;&|<>]+)){0,2}\s*$',
     re.IGNORECASE,
 )
@@ -27,7 +32,7 @@ def main():
         sys.exit(0)
     sys.stderr.write(
         "BLOCKED by excel_bash_guard: excel-writer may only run "
-        'powershell -NoProfile -ExecutionPolicy Bypass -File "C:/Users/Jeremy/swarm/tools/xl_ole.ps1" <mode> [args] '
+        f'powershell -NoProfile -ExecutionPolicy Bypass -File "{XL_OLE}" <mode> [args] '
         "(single command, no chaining or substitution). Read lock files and JSON with the Read tool, not cat/head/grep; "
         "for specific cells use the helper's range mode.\n"
     )

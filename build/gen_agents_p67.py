@@ -8,8 +8,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from gen_agents import (  # noqa: E402
     POINTER,
-    ACAD_GUARD, ACAD_GUARD_HOOK, ACAD_READ, ACAD_READ_OPS, COMMON, R, REVIT_CODE_READ, REVIT_SERIAL, MAN, PROJECT_GUARD, REVIT_READ, SWARM, fm, hooks,
-    write,
+    ACAD_GUARD, ACAD_GUARD_HOOK, ACAD_READ, ACAD_READ_OPS, COMMON, R, REVIT_CODE_READ, REVIT_SERIAL, MAN, PROJECT_GUARD, REVIT_READ, SKILLS_DIR, SWARM, fm,
+    hooks, write,
 )
 
 INPUTS = f"{SWARM}/inputs"
@@ -23,7 +23,7 @@ open_file get_page_count get_page_information list_markups_in_pdf get_markup_sha
 get_markup_state create_markup_thumbnail search get_bookmarks
 """.split()]
 OUTPUT = f"{SWARM}/output"
-PCR_SKILL = ("C:/Users/Jeremy/.claude/skills/synced/676e33ed-2bf9-4d9f-8b67-7695f8e9bc0d_"
+PCR_SKILL = (f"{SKILLS_DIR}/synced/676e33ed-2bf9-4d9f-8b67-7695f8e9bc0d_"
              "93d96abd-82f7-451b-b27f-57f50d762922/plan-check-response-letter")
 M365_READ = [M + n for n in "outlook_email_search read_resource get_me".split()]
 # Read-only Teams and Egnyte (Jeremy, 2026-11-02). The connector also holds send/write scopes (Mail.Send, Files.ReadWrite),

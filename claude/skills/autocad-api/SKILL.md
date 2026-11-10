@@ -23,11 +23,11 @@ what exists and how it is called.
 1. `references/core.md`: the 110 API names our scripts use, with call counts, the 2027 signature and firm notes,
    plus a list of names that do NOT exist.
 2. Checker (if you have Bash). One call checks a whole script:
-   `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py --lsp <file.lsp> [--with lib.lsp]`
+   `python ~/.claude/skills/autocad-api/scripts/acad_api_check.py --lsp <file.lsp> [--with lib.lsp]`
    It checks every function call, every 'vla-xxx passed to vl-catch-all-apply/mapcar, and every member named in
    vlax-get/-put/-invoke(-method)/-property calls. It skips the file's own defuns, locals, quoted lists and dotted
    pairs, and follows `(load "...")`; pass helpers loaded another way with `--with` (e.g.
-   `--with C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp`; a patch file needs `--with` its base script).
+   `--with ~/swarm/library/acad/swarm_lib.lsp`; a patch file needs `--with` its base script).
    Single names: `acad_api_check.py vla-AddText LWPolyline.SetBulge Hatch.put-PatternName entmod dxf:TEXT.72`.
    `--object LWPolyline` lists all members including inherited ones, `--dxf MTEXT` lists group codes.
    Exit 0 = all FOUND, 1 = any NOT FOUND / DOC-ONLY (it suggests close names).
@@ -73,4 +73,4 @@ what exists and how it is called.
   AutoCAD 2027 defines 3058 function symbols after vl-load-com).
 - DXF: Autodesk DXF Reference (source and year in the dxf-entities.md header).
 - .NET: `dll2llm acdbmgd.dll acmgd.dll accoremgd.dll --output references/dotnet` run in the AutoCAD install folder.
-- core.md: `python scripts/gen_core.py C:/Users/Jeremy/swarm` (counts calls; notes live in that script).
+- core.md: `python scripts/gen_core.py ~/swarm` (counts calls; notes live in that script).

@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python C:/Users/Jeremy/.claude/hooks/orchestrator_guard.py"
+            "command": "python \"$HOME/.claude/hooks/orchestrator_guard.py\""
           }
         ]
       }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python C:/Users/Jeremy/.claude/hooks/lsp_lint_hook.py",
+            "command": "python \"$HOME/.claude/hooks/lsp_lint_hook.py\"",
             "timeout": 30
           }
         ]

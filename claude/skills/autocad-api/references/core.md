@@ -1,6 +1,6 @@
 # Core AutoLISP / ActiveX names used by our swarm scripts
 
-Generated 2026-11-06 by scripts/gen_core.py from 138 .lsp files under C:\Users\Jeremy\swarm (calls counted in function position; drawing / ActiveX / file API only, list and math primitives left out). Look here first; everything else: the checker, activex-INDEX.md, autolisp-functions.md, dxf-entities.md. Notes are facts that cost failed runs or were verified in the 2027 type library.
+Generated 2026-11-06 by scripts/gen_core.py from 138 .lsp files under ~/swarm (calls counted in function position; drawing / ActiveX / file API only, list and math primitives left out). Look here first; everything else: the checker, activex-INDEX.md, autolisp-functions.md, dxf-entities.md. Notes are facts that cost failed runs or were verified in the 2027 type library.
 
 | Name | Calls | Files | Signature (2027) | Note |
 |---|---|---|---|---|

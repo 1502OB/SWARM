@@ -1,6 +1,6 @@
 """PreToolUse guard: only call the apps this project uses.
 
-Reads C:/Users/Jeremy/swarm/manifests/project.json ({"apps": ["revit"|"autocad", ...], ...}), written by the
+Reads <SWARM>/manifests/project.json (SWARM from hooks/paths.py: $SWARM_HOME, else ~/swarm) ({"apps": ["revit"|"autocad", ...], ...}), written by the
 orchestrator at Step 0. A Revit or AutoCAD MCP call to an app not in "apps" is blocked (exit 2). With no
 project.json, every call is allowed, so older runs keep working.
 """
@@ -9,7 +9,10 @@ import os
 import sys
 from pathlib import Path
 
-PROJECT = Path(os.environ.get("SWARM_MANIFESTS_DIR", "C:/Users/Jeremy/swarm/manifests")) / "project.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paths import SWARM, fwd  # noqa: E402  (2026-11-09: no hard-coded user folder)
+
+PROJECT = Path(os.environ.get("SWARM_MANIFESTS_DIR", fwd(SWARM / "manifests"))) / "project.json"
 APPS = {"mcp__revit-mcp__": "revit", "mcp__autocad-mcp__": "autocad"}
 
 

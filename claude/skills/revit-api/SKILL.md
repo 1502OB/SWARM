@@ -22,7 +22,7 @@ Revit version on this PC (2025.4); regenerate it after a Revit upgrade.
 1. `references/core.md`: the ~80 types our scripts actually use, with firm notes (the facts that cost failed runs).
 2. `references/INDEX.md`: type -> file (2306 types). Then read only that topic file's section for the type.
 3. Checker (if you have Bash): one call for all members, short or full type names, inheritance followed:
-   `python C:/Users/Jeremy/.claude/skills/revit-api/scripts/revit_api_check.py View.SetCategoryHidden Viewport.Pinned ...`
+   `python ~/.claude/skills/revit-api/scripts/revit_api_check.py View.SetCategoryHidden Viewport.Pinned ...`
    `--type Viewport` lists a type's members. Exit 1 = something is NOT FOUND (it suggests close names).
 4. Without Bash, use Grep on `references/` for the member signature, e.g. `SetBoxCenter\(`, then confirm the
    enclosing type header above the hit with a second Grep such as `^\[[A-Z ]+\] Viewport\b` (headers look like

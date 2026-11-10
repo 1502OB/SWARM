@@ -1,6 +1,6 @@
 """Lint an AutoLISP script before it is loaded into AutoCAD (2026-11-06; extends tools/lspcheck.py).
 
-    python C:/Users/Jeremy/swarm/tools/lsp_lint.py <file.lsp> [<file.lsp> ...] [--json]
+    python ~/swarm/tools/lsp_lint.py <file.lsp> [<file.lsp> ...] [--json]
 
 ERRORS (exit 1, the file must not be loaded):
   E1 unbalanced parens / unterminated string (reports the top-level form, e.g. the defun, where it starts)
@@ -15,14 +15,26 @@ WARNINGS (reported, exit 0):
      break the JSON (the bridge now escapes it, but keep results on one line: join with " | ")
   W3 a top-level form other than defun / defun-q / setq / princ / vl-load-com / load: it runs at load time
   W4 (command ...) in a function: allowed, but it runs in the dispatcher's context; prefer entmake / ActiveX
+  W5 (A36) a c:* command whose last form is (princ) / (princ x) and does not return a string: execute_lisp then
+     gets an EMPTY payload and the writer has to infer the result. End with (swl:result-out <task> <string>).
+  W6 (A31) (setq v (or ...)) where v is later used as a value: AutoLISP OR returns T, not the first non-nil
+     argument. Use (cond (a) (b)) to keep the value.
+  W7 (A43, heuristic) an entget DATA list passed where an ENAME is expected: vlax-ename->vla-object / entget /
+     entdel / entupd / entnext / ssadd / ssmemb (or a function of this file or swarm_lib whose parameter flows into
+     one of them) called with a symbol whose last assignment in the defun was (entget ...) / (swl:ent ...), or an
+     element of a list of those. Pass (cdr (assoc -1 ed)). entmod is not a sink: it takes the data list.
 Exit 0 = no errors, 1 = errors, 2 = usage / unreadable file.
 """
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
-LIBRARY = Path("C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from swarm_paths import SWARM  # noqa: E402
+
+LIBRARY = SWARM / "library" / "acad" / "swarm_lib.lsp"
 NOT_AUTOLISP = {
     "fboundp", "identity", "let", "let*", "loop", "format", "flet", "labels", "incf", "decf", "dolist", "dotimes",
     "when", "unless", "defvar", "defparameter", "defconstant", "funcall", "string-upcase", "string-downcase",
@@ -126,6 +138,193 @@ def library_names():
     return {f.items[1][1].lower() for f in forms if head(f) in ("defun", "defun-q") and len(f.items) > 1}
 
 
+# ---------------------------------------------------------------- W5 / W6 / W7 (2026-11-09, LESSONS A31 A36 A43)
+STRING_HEADS = {"strcat", "swl:result", "swl:result-out", "swl:san", "swl:join", "substr", "itoa", "rtos", "vl-princ-to-string",
+                "vl-prin1-to-string", "strcase", "vl-string-subst", "vl-string-trim", "vl-string-right-trim",
+                "vl-string-left-trim", "vl-string-translate", "chr", "swl:f", "getvar"}
+PRED_HEADS = {"=", "/=", "<", ">", "<=", ">=", "eq", "equal", "null", "not", "and", "or", "wcmatch", "member",
+              "minusp", "zerop", "numberp", "boundp", "vl-catch-all-error-p", "vlax-erased-p", "listp", "atom",
+              "vl-string-search", "assoc", "vl-position", "vlax-property-available-p", "vlax-method-applicable-p",
+              "findfile", "tblsearch", "vl-some", "vl-every"}
+BOOL_USE = {"if", "and", "or", "not", "null", "while"}
+ENAME_SINKS = {"vlax-ename->vla-object": {0}, "entget": {0}, "entdel": {0}, "entupd": {0}, "entnext": {0},
+               "ssadd": {0}, "ssmemb": {0}, "redraw": {0}}
+DATA_HEADS = {"entget", "swl:ent"}
+PICK_HEADS = {"car", "cadr", "caddr", "last", "nth"}
+LIST_HEADS = {"cons", "list", "append"}
+
+
+def sym(x):
+    return x[1].lower() if isinstance(x, tuple) and x[0] == "sym" else None
+
+
+def defun_parts(f):
+    """(name, params [lower], body forms) of a (defun name (args / locals) body...) node."""
+    name = f.items[1][1] if isinstance(f.items[1], tuple) else "?"
+    params, args = [], f.items[2] if len(f.items) > 2 else None
+    if isinstance(args, Node):
+        for a in args.items:
+            if sym(a) == "/":
+                break
+            if sym(a):
+                params.append(sym(a))
+    return name, params, f.items[3:]
+
+
+def w5_check(f, warnings):
+    name, _, body = defun_parts(f)
+    if not name.lower().startswith("c:") or not body:
+        return
+    last = body[-1]
+    while isinstance(last, Node) and head(last) == "progn" and len(last.items) > 1:
+        last = last.items[-1]
+    if not (isinstance(last, Node) and head(last) == "princ"):
+        return
+    if len(last.items) > 1:
+        arg = last.items[1]
+        if isinstance(arg, tuple) and arg[0] == "str":
+            return
+        if isinstance(arg, Node) and head(arg) in STRING_HEADS:
+            return
+        if sym(arg) and _set_from_string(f, sym(arg)):
+            return
+    form = "(princ)" if len(last.items) == 1 else "(princ ...)"
+    warnings.append(("W5", last.line, f"{name} ends in {form}: the bridge gets no result; "
+                                      "return the result string: end with (swl:result-out <task> ...)"))
+
+
+def _set_from_string(f, v):
+    for it, _ in walk(f):
+        if isinstance(it, Node) and head(it) == "setq":
+            for t, val in zip(it.items[1::2], it.items[2::2]):
+                if sym(t) == v and ((isinstance(val, tuple) and val[0] == "str")
+                                    or (isinstance(val, Node) and head(val) in STRING_HEADS)):
+                    return True
+    return False
+
+
+def _walk_parent(node):
+    """Yield (item, parent node, index in parent) for everything under node."""
+    if isinstance(node, Node):
+        for k, it in enumerate(node.items):
+            yield it, node, k
+            yield from _walk_parent(it)
+
+
+def w6_check(f, warnings):
+    name = defun_parts(f)[0]
+    sets = []  # (var, target atom, value node)
+    for it, _ in walk(f):
+        if isinstance(it, Node) and head(it) == "setq":
+            for t, val in zip(it.items[1::2], it.items[2::2]):
+                if sym(t) and isinstance(val, Node) and head(val) == "or":
+                    args = val.items[1:]
+                    if args and all(isinstance(a, Node) and head(a) in PRED_HEADS for a in args):
+                        continue  # (or (= a 1) (> b 2)) is a boolean on purpose
+                    sets.append((sym(t), t, val))
+    if not sets:
+        return
+    parents = list(_walk_parent(f))
+    cond_clauses = {id(it) for it, p, k in parents if isinstance(it, Node) and head(p) == "cond"}
+    for v, target, val in sets:
+        value_use = False
+        for it, p, k in parents:
+            if it is target or sym(it) != v or p is f.items[2]:
+                continue  # the (args / locals) list is a declaration, not a use
+            h = head(p)
+            if h == "setq":
+                continue  # another assignment target, or copied into another variable: not decisive
+            if h in BOOL_USE or (id(p) in cond_clauses and k == 0):
+                continue
+            value_use = True
+            break
+        if value_use:
+            warnings.append(("W6", val.line, f"(setq {v} (or ...)) in {name}: or returns T, not the value; use cond"))
+
+
+def ename_params(defs):
+    """{function name: {argument index}} that must be an ENAME: the builtin sinks plus every given defun whose
+    parameter is passed on to one of them (fixed point)."""
+    out = {k: set(v) for k, v in ENAME_SINKS.items()}
+    parts = [defun_parts(f) for f in defs]
+    changed = True
+    while changed:
+        changed = False
+        for nm, params, body in parts:
+            got = out.setdefault(nm.lower(), set())
+            for b in body:
+                for it, _ in walk(_wrap([b])):
+                    if isinstance(it, Node) and head(it) in out:
+                        for k in list(out[head(it)]):
+                            if k + 1 < len(it.items) and sym(it.items[k + 1]) in params:
+                                idx = params.index(sym(it.items[k + 1]))
+                                if idx not in got:
+                                    got.add(idx)
+                                    changed = True
+    return {k: v for k, v in out.items() if v}
+
+
+def w7_check(f, sinks, warnings):
+    name, params, body = defun_parts(f)
+    state = {}  # var -> "data" | "list" | None
+
+    def kind(val):
+        if isinstance(val, Node):
+            h = head(val)
+            if h in DATA_HEADS:
+                return "data"
+            if h in PICK_HEADS:
+                src = val.items[2] if h == "nth" and len(val.items) > 2 else (val.items[1] if len(val.items) > 1 else None)
+                return "data" if state.get(sym(src)) == "list" else None
+            if h in LIST_HEADS and any(state.get(sym(a)) in ("data", "list") for a in val.items[1:]):
+                return "list"
+        return None
+
+    def visit(n):
+        if not isinstance(n, Node):
+            return
+        h = head(n)
+        if h == "setq":
+            for t, val in zip(n.items[1::2], n.items[2::2]):
+                visit(val)
+                if sym(t):
+                    state[sym(t)] = kind(val)
+            return
+        if h == "foreach" and len(n.items) > 2 and sym(n.items[1]):
+            visit(n.items[2])
+            if state.get(sym(n.items[2])) == "list":
+                state[sym(n.items[1])] = "data"
+            for b in n.items[3:]:
+                visit(b)
+            return
+        for it in n.items[1:]:
+            visit(it)
+        if h in sinks:
+            for k in sinks[h]:
+                if k + 1 < len(n.items):
+                    a = n.items[k + 1]
+                    if state.get(sym(a)) == "data" or (isinstance(a, Node) and head(a) in DATA_HEADS):
+                        what = a[1] if isinstance(a, tuple) else f"({head(a)} ...)"
+                        warnings.append(("W7", n.line, f"({h} {what} ...) in {name}: {what} holds entget DATA, "
+                                                       "not an ename; pass (cdr (assoc -1 ...))"))
+
+    for b in body:
+        visit(b)
+
+
+_LIB_DEFS = None
+
+
+def library_defs():
+    global _LIB_DEFS
+    if _LIB_DEFS is None:
+        _LIB_DEFS = []
+        if LIBRARY.exists():
+            forms, _ = parse(LIBRARY.read_text(encoding="utf-8", errors="replace"))
+            _LIB_DEFS = [f for f in forms if head(f) in ("defun", "defun-q") and len(f.items) > 2]
+    return _LIB_DEFS
+
+
 def lint(path, lib=None):
     text = Path(path).read_text(encoding="utf-8", errors="replace")
     forms, errors = parse(text)
@@ -133,6 +332,12 @@ def lint(path, lib=None):
     lib = library_names() if lib is None else lib
     is_lib = Path(path).resolve() == LIBRARY.resolve() if LIBRARY.exists() else False
     seen = {}
+    file_defs = [f for f in forms if isinstance(f, Node) and head(f) in ("defun", "defun-q") and len(f.items) > 2]
+    sinks = ename_params(([] if is_lib else library_defs()) + file_defs)
+    for f in file_defs:
+        w5_check(f, warnings)
+        w6_check(f, warnings)
+        w7_check(f, sinks, warnings)
     for f in forms:
         if not isinstance(f, Node):
             continue

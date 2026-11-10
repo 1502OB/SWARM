@@ -22,7 +22,7 @@ description: Firm-specific AutoCAD rules for this office's drawings (snaps, clou
   vla-GetBoundingBox; annotative objects are right at every annotation scale; the test plot shows the change.
 
 ## Rules
-- Load and use the shared library `C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp` (swl: helpers: one-line results
+- Load and use the shared library `~/swarm/library/acad/swarm_lib.lsp` (swl: helpers: one-line results
   swl:result, boxes, crossing-aware clash, viewport projection, clockwise clouds, live-value preflight, tag spots,
   swl:queue-command for attach/xref/publish). Never redefine swl: functions; prefix your own with the task id.
 - Every script defines -PLAN (read-only dry run), -RUN, -CLEAN, -CHECK. Before it goes to a writer: lsp_lint 0 errors,

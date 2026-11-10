@@ -1,6 +1,6 @@
 # LADBS IB P/PC 2026-009 Domestic Water Pipe Sizing (LAPC 610.5)
 
-Source: C:/Users/Jeremy/swarm/inputs/domestic-water-pipe-sizing-ib-p-pc2014-009-8.pdf (41 pages). Edition folder: LADBS_IB.
+Source: ~/swarm/inputs/domestic-water-pipe-sizing-ib-p-pc2014-009-8.pdf (41 pages). Edition folder: LADBS_IB.
 Cite as: <source>, page N (file pNNN.md). Section and table numbers are what appears in the page text;
 confirm the wording on the page before citing.
 

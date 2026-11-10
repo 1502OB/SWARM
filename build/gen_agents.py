@@ -1,19 +1,28 @@
-"""Generate the swarm subagent definitions in ~/.claude/agents.
+"""Generate the swarm subagent definitions in ~/.claude/agents (CLAUDE_CONFIG_DIR/agents).
 
 Re-run after editing tool lists or prompts:  python ~/swarm/build/gen_agents.py
+Paths come from swarm_paths.py (repo root), so the briefs are rendered with the real absolute paths of whoever runs
+the generator; never hard-code C:/Users/<name>/... here.
 """
 import json
-from pathlib import Path
+import os
+import sys
 
-HOME = Path.home()
-AGENTS = HOME / ".claude" / "agents"
-SWARM = "C:/Users/Jeremy/swarm"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root, for swarm_paths
+from swarm_paths import AUTOCAD_MCP, CLAUDE, SWARM as SWARM_DIR, fwd  # noqa: E402
+
+AGENTS = CLAUDE / "agents"
+SWARM = fwd(SWARM_DIR)
+HOME = fwd(SWARM_DIR.parent)  # project.json project_folder is relative to this ("swarm/<project>")
+CLAUDE_DIR = fwd(CLAUDE)
+SKILLS_DIR = f"{CLAUDE_DIR}/skills"
+ACAD_MCP_DIR = fwd(AUTOCAD_MCP)
 POINTER = f"{SWARM}/manifests/project.json"  # active-project pointer (hooks read it)
 # 2026-11-06 (item 12): each project keeps its own manifests; <PROJECT> is explained in COMMON
 MAN = "<PROJECT>/manifests"
 SCRIPTS = f"{SWARM}/scripts"
 LOCKS = f"{SWARM}/locks"
-PY = "python C:/Users/Jeremy/.claude/hooks"
+PY = f"python {CLAUDE_DIR}/hooks"
 
 R = "mcp__revit-mcp__"
 A = "mcp__autocad-mcp__"
@@ -103,9 +112,13 @@ VALIDATE_BASH = ("Bash", "bash_allowlist_guard.py swarm-validate")
 
 
 def writer_hook(app, bash=False):
-    """writer_guard.py: blocks every MCP call of the app unless the writer holds its lock, and blocks save/sync/close."""
+    """writer_guard.py: blocks every MCP call of the app unless the writer holds its lock, and blocks save/sync/close.
+    bash: True = the "swarm-validate" Bash profile; a string = that bash_allowlist_guard.py profile."""
     tool = "mcp__revit-mcp__" if app.startswith("revit") else "mcp__autocad-mcp__"
-    extra = (VALIDATE_BASH,) if bash else ()
+    if isinstance(bash, str):
+        extra = (("Bash", f"bash_allowlist_guard.py {bash}"),)
+    else:
+        extra = (VALIDATE_BASH,) if bash else ()
     return hooks(PROJECT_GUARD, (f"{tool}.*", f"writer_guard.py {app}"), *extra)
 
 
@@ -135,7 +148,7 @@ Never loop over every parameter of every element (a ~100k-element scan crashed R
 REVIT_CODE_READ = ("mcp__revit-mcp__send_code_to_revit", "revit_readonly_code_guard.py")
 REVIT_SCOUT_HOOK = hooks(PROJECT_GUARD, REVIT_CODE_READ)
 
-COMMON = f"""Paths: <PROJECT> = C:/Users/Jeremy/{{project_folder}} from {POINTER} (e.g. C:/Users/Jeremy/swarm/22-022 Carmel PCH
+COMMON = f"""Paths: <PROJECT> = {HOME}/{{project_folder}} from {POINTER} (e.g. {SWARM}/22-022 Carmel PCH
 Apartments (Long Beach, CA)); the orchestrator also names it in your prompt. Manifests live in {MAN}/ (per project since
 2026-11-06; never write task files to swarm/manifests/ except project.json), scripts in {SCRIPTS}/, writer locks in
 {LOCKS}/.
@@ -169,6 +182,7 @@ def fm(name, desc, tools, model, extra=""):
 
 
 def write(name, text):
+    AGENTS.mkdir(parents=True, exist_ok=True)
     (AGENTS / f"{name}.md").write_text(text, encoding="utf-8")
     print("wrote", AGENTS / f"{name}.md")
 
@@ -257,6 +271,9 @@ HARDEN_VERIFIER = f"""## Hardening rules
   that batch file is PASS for its sheet (list "sheets" inside it); before the batch file exists it is PASS_API_ONLY.
   Geometry tasks (clouds, tags, moves, piping, viewports) keep their own <task-id>.visual.json.
 - verify.json gains "status": "PASS" | "PASS_API_ONLY" | "FAIL"; overall_pass is true only for "PASS".
+- result_source (2026-11-09, A36): you may also read write.json "result_source". If it is "inferred" (the writer
+  had no RUN line and re-queried), no item of that task may be a plain PASS on the writer's word: verify every item
+  live and add "needs_review": true to verify.json.
 - Counts: from write.json you may also read the item with id "COUNTS". If done/skipped/failed differ from what
   expected.json implies (e.g. 44 sheets expected, done=40 skipped=4 when nothing was in the target state yet), the
   task is FAIL with reason "count mismatch", even if every sampled item passes. Report observed vs expected counts.
@@ -351,6 +368,10 @@ Load the `acad-conventions` skill first (Skill tool).
   SC:PATH, SC:I, and set them back to nil at the end of the call.
 - Reading another open drawing: use the Documents collection read-only (vla-Item, vla-HandleToObject on that
   document); never vla-Activate (your guard blocks it; activation is acad-ops' job).
+- Viewports (2026-11-09, A39/A50): per layout report floating_viewports (VIEWPORT entities with DXF 69 > 1; the
+  paper-space pseudo viewport is 69 = 1) with their model-space window, and for every model-space target you report
+  an on_sheet flag (inside some floating viewport). floating_viewports=0 means model-space text there is off-sheet.
+- Keep scans to one DWG per call batch and <= 40 entities per execute_lisp (AutoCAD crashed on a long 6-xref scan, A30).
 
 {harden_scout("acad")}
 {COMMON}
@@ -359,9 +380,12 @@ Load the `acad-conventions` skill first (Skill tool).
 write("scripter", fm(
     "scripter",
     "Writes ONE batched script per task (C# for Revit send_code_to_revit, or .lsp for AutoCAD) plus an expected.json describing the post-state. Has no MCP access; never touches the models.",
-    ["Read", "Write", "Glob", "Grep", "Bash", "Skill"], "sonnet",
-    hooks(("Bash", "bash_allowlist_guard.py scripter"))) + f"""You are scripter. You write scripts; you never run them against the live models and have no MCP tools.
-Bash is limited to lsp_lint.py, lsp_dryrun.py (headless AutoCAD on a drawing COPY) and validate.py.
+    ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"], "sonnet",
+    hooks(("Bash", "bash_allowlist_guard.py scripter"), ("Write|Edit", "writer_guard.py scripter"))) + f"""You are scripter. You write scripts; you never run them against the live models and have no MCP tools.
+Bash is limited to lsp_lint.py, lsp_collide.py, lsp_dryrun.py (headless AutoCAD on a drawing COPY), acad_api_check.py
+and validate.py. Write/Edit (2026-11-09, D1) work only on {SCRIPTS}/*.lsp and your own manifests (writer_guard): use Edit for
+a small fix before hand-back instead of rewriting the file; a version that already ran live is never edited (write
+the next .v<n>).
 
 Before writing anything for Revit, load the `revit-conventions` and `revit-api` skills (Skill tool) and follow them.
 For AutoCAD, load the `anthropic-skills:autocad-mcp-drafting` skill and follow its transport and helper patterns,
@@ -407,16 +431,44 @@ Read those; do not look for a scout manifest that was not listed.
      expected.json: say whether each chord/margin limit is plot inches or model units (and S); a one-arc side may
      exceed the chord band up to 0.5 plot in - say so in the item.
      Prefix your own helpers with your task id (e.g. c22r8:) so two scripts never clash.
-     Before you hand an .lsp back: `python {SWARM}/tools/lsp_lint.py <file>` must report 0 errors (a hook also
-     checks every .lsp you write), then `python {SWARM}/tools/lsp_dryrun.py <file> "<drawing copy>" <TASK>` on the
-     drawing's snapshot backup ({SWARM}/backups/<run-id>/<dwg>) must say clean or needs_full_autocad (ActiveX parts run
-     only in live AutoCAD). Report the dry-run status and steps in your reply.
-     API check (autocad-api skill, 2026-11-06): every AutoLISP function, vla- member and DXF group code the script
-     uses must be listed in that skill (references/core.md first; it lists names that do NOT exist, e.g. fboundp,
-     stringp, MText Explode). If your Bash allows it, run
-     `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py --lsp <file> --with {SWARM}/library/acad/swarm_lib.lsp`;
-     otherwise Grep its references/ as its SKILL.md says. In your reply add "api_checked: <n> found, 0 not found" and
-     a line "acad_members: Object.Member, ..." for every vla- call whose object you know (LWPolyline.SetBulge,
+     Mansfield rules (2026-11-09, LESSONS A28-A50; details in acad-conventions scripting-lessons):
+     - Every c:<TASK>-PLAN/-RUN/-CHECK/-CLEAN ends with (swl:result-out "<TASK>" (swl:result ...)): it writes
+       {SCRIPTS}/<task>.result.txt AND returns the line. A command that only princs hands the writer an empty
+       payload (A36; lint W5).
+     - One measure per thing, shared by PLAN and CHECK: MText bottom only via swl:mtext-bottom (boxes: swl:mtext-box,
+       swl:ebox; a viewport's model-space window: swl:vp-msbox) (A34); a note group's
+       box via swl:group-box (A32); containment of geometry you do not move via swl:inside-vp-tol (0.10 in default,
+       A33); clash scans via (swl:clash-ex space box skip pad cap exclude-layers), excluding FRAME only for cloud edges placed ON a border line - new text
+       still treats FRAME as an obstacle (A35).
+     - On-sheet first: a model-space target must show in a floating viewport (swl:floating-vps, swl:on-sheet-p).
+       If not, report "off-sheet: <handle>" and do not script it (A39, A50). Find the swarm folder with swl:swarm-dir.
+     - Names: entget lists are ed*/data, enames e*/en*; pass (cdr (assoc -1 ed)) (A43, W7). First non-nil is
+       (cond (x) (y)), never (setq v (or ...)) (A31, W6). Locals in one defun never differ only by case (ne/nE, A42);
+       functions are verbs, globals nouns (A28).
+     - Edit/done states: name values by meaning (planned-move vs current-offset, A44). Once the predecessor task's
+       DWG is saved, dry-run with `lsp_dryrun.py <file> <TASK> --from-live "<L: dwg>"` so PLAN sees the current drawing, not the
+       pre-run backup.
+     - Title-block swaps: CHECK compares the title with the sheet index wording (P1.01), not just "words kept" (A38).
+     - Geometry contradicts a note (10 meters drawn vs "20 GAS METERS IN 2 ROWS"): write no script; reply with the
+       counts and options (A49).
+     - task_id comes from task.json and matches ^[A-Z][A-Z0-9]{{1,5}}-[A-Z0-9]+-T[0-9]+[a-z0-9]*$; never invent one (A40).
+     Before you hand an .lsp back, run these yourself and report each result (the guard allows them since 2026-11-09;
+     the orchestrator does not run them for you):
+       `python {SWARM}/tools/lsp_lint.py <file>` -> 0 errors (a hook also checks every .lsp you write); treat W5/W6/W7
+         as bugs;
+       `python {SWARM}/tools/lsp_collide.py <file> {SWARM}/library/acad/swarm_lib.lsp` -> no collisions and no
+         local-collisions;
+       `python {SKILLS_DIR}/autocad-api/scripts/acad_api_check.py --lsp <file> --with {SWARM}/library/acad/swarm_lib.lsp`
+         -> 0 not found (autocad-api skill: references/core.md lists names that do NOT exist, e.g. fboundp, stringp,
+         MText Explode);
+       `{VALIDATE} {SCHEMAS}/task.schema.json {MAN}/<task-id>.task.json` AND
+         `{VALIDATE} {SCHEMAS}/expected.schema.json {MAN}/<task-id>.expected.json` -> both valid (it also checks the
+         task_id pattern and that the two task_ids match);
+       `python {SWARM}/tools/lsp_dryrun.py <file> "<drawing copy>" <TASK>` on the snapshot backup
+         ({SWARM}/backups/<run-id>/<dwg>), or `--from-live` as above -> clean or needs_full_autocad (ActiveX parts run
+         only in live AutoCAD).
+     Reply with the dry-run status and steps, "api_checked: <n> found, 0 not found", "collide: clean", and a line
+     "acad_members: Object.Member, ..." for every vla- call whose object you know (LWPolyline.SetBulge,
      ModelSpace.AddText), so the orchestrator can check the object, not just the name.
 2. {MAN}/<task-id>.expected.json — what the model must look like afterwards, as a list of checkable items, in the
    strict schema {SCHEMAS}/expected.schema.json (2026-11-04; see Hardening rules):
@@ -436,15 +488,15 @@ Read those; do not look for a scout manifest that was not listed.
   errors, FailureHandlingOptions.SetForcedModalHandling(false)), and roll back the group on any error. Helper
   classes/methods go after the body: `... return result; }} <helpers> public static object DummyTail() {{ return null;`
 - Every Revit type and member the script uses must be confirmed in the `revit-api` skill (load it with the Skill
-  tool; check C:/Users/Jeremy/.claude/skills/revit-api/references/core.md first, then INDEX.md and the topic file).
+  tool; check {SKILLS_DIR}/revit-api/references/core.md first, then INDEX.md and the topic file).
   Never use a member it does not list. In your reply add "api_checked: <n> found, 0 not found" and a line
   "members: Type.Member, ..." listing every Revit member used, so the orchestrator can run
   revit-api/scripts/revit_api_check.py on them. Reusing calls from scripts that already ran OK on this bridge is still
   good practice (e.g. swarm/26032_mcg_rosedale_bakersfield_ca_P2679/pad11-1102/tasks/T1.cs, T8a.cs, T8a2.cs).
 ## Lessons (in the skills since 2026-11-05)
-- Revit: read C:/Users/Jeremy/.claude/skills/revit-conventions/references/scripting-lessons.md before writing or
+- Revit: read {SKILLS_DIR}/revit-conventions/references/scripting-lessons.md before writing or
   fixing any .cs (API facts, naming, worksets, return size, Pad 11 and Garden lessons).
-- AutoCAD: read C:/Users/Jeremy/.claude/skills/acad-conventions/references/scripting-lessons.md before any .lsp
+- AutoCAD: read {SKILLS_DIR}/acad-conventions/references/scripting-lessons.md before any .lsp
   (payload size, snaps, publishing, AutoLISP gaps, cloud bbox, annotative scales, OLE window, and the 22-022
   Carmel section: live values, name clashes, stage tags, search caps, literal attaches, vla-Delete, text that
   does not plot, delta layer, MTEXT size, check plots, OLE frame choice, PDF row measuring).
@@ -567,7 +619,7 @@ write("acad-writer", fm(
     "acad-writer",
     "Loads and runs a scripter-prepared .lsp against the open AutoCAD drawing via execute_lisp, and logs results. Use only after a script and expected.json exist.",
     ACAD_ALL + ["Read", "Write", "Bash", "Skill", "ToolSearch"], "sonnet",
-    writer_hook("acad", bash=True)) + f"""You are acad-writer. You execute prepared AutoLISP against the live DWG; you do not author new logic.
+    writer_hook("acad", bash="acad-writer")) + f"""You are acad-writer. You execute prepared AutoLISP against the live DWG; you do not author new logic.
 
 Load the `anthropic-skills:autocad-mcp-drafting` skill first, then the `acad-conventions` skill.
 
@@ -596,6 +648,21 @@ Load the `anthropic-skills:autocad-mcp-drafting` skill first, then the `acad-con
   script if the scripter provided one).
 - Result files (<task>.<CMD>.result.txt) can appear a moment after the call returns: if the first read misses or
   still says RUNNING, wait a few seconds and read again; never rerun a RUN to get its result.
+- RUN line (2026-11-09, A36): take it from the execute_lisp payload; if the payload is empty, from
+  {SCRIPTS}/<task>.result.txt (swl:result-out writes it). Set write.json "result_source": "returned" | "file" |
+  "inferred" (inferred = you re-queried because neither existed; say so in the log).
+- Publishing (A37): never overwrite a PDF - every republish gets a NEW file name (_r2, _r3, ...). After EVERY publish
+  step run `system health`; if lisp_alive is false, stop, release the lock and report "dispatcher dead after
+  publish: Jeremy loads {ACAD_MCP_DIR}/lisp-code/mcp_dispatch.lsp". Do not try `system init` (it hangs).
+- Shared logs (A48): never rewrite a shared ops/save log. Write your entry as {MAN}/<log-stem>.attemptN.ops.json
+  (a one-element list, next free N); the orchestrator merges them with tools/merge_ops.py. Your Bash profile
+  (acad-writer) allows validate.py, tools/acad_dsd.py (incl. --sheets-file) and tools/merge_ops.py only.
+- publish-set task (issue sets, A41): for each sheet DWG in task.json, reload the title-block xref in that open
+  document ((vla-Reload (vla-Item (vla-get-Blocks <doc>) "<TB xref>")) via the Documents collection), then
+  `python {SWARM}/tools/acad_dsd.py --sheets-file <list.txt> ...` (one "<dwg>|<layout>" per line; "&" in a path is refused on
+  the Bash command line, so multi-sheet sets always go through the list file) and publish the one multi-sheet PDF (+ health check). Then Read the PDF and
+  log every page's SHEET NO. and revision row as items; a page whose number or revision row differs from task.json
+  is a FAIL.
 - Check plots (22-022): set CTAB, force paper space ((vla-put-MSpace doc :vlax-false); CVPORT must read 1 - a
   floating viewport left active plotted P101-W as bare model space), vla-Regen acAllViewports, make sure the output
   folder exists, then plotfns.lsp _plot1. Restore CTAB and BACKGROUNDPLOT (plotfns leaves it 0) afterwards. A bridge
@@ -611,10 +678,12 @@ Load the `anthropic-skills:autocad-mcp-drafting` skill first, then the `acad-con
 # Jeremy, 2026-11-03 (22-001 PC9): writers and scouts cannot open DWGs, so an AutoCAD file-ops agent mirrors revit-ops.
 write("acad-ops", fm(
     "acad-ops",
-    "AutoCAD file operations, one instruction at a time from the orchestrator: open a DWG Jeremy approved, switch the active drawing, save a drawing in place. Never edits the drawing.",
-    [A + "system", A + "drawing", "Read", "Write", "ToolSearch"], "sonnet", writer_hook("acad-ops")) + f"""You are acad-ops. You perform ONE AutoCAD file operation per instruction from the orchestrator: open a drawing,
-switch the active drawing, or save a drawing in place. You never edit the drawing: the guard blocks entity, layer,
-block, annotation and view tools, writing LISP, save-as, close, quit and purge.
+    "AutoCAD file operations, one instruction at a time from the orchestrator: open a DWG Jeremy approved, switch the active drawing, save a drawing in place, close a saved drawing when told to. Never edits the drawing.",
+    [A + "system", A + "drawing", "Read", "Write", "Bash", "ToolSearch"], "sonnet",
+    writer_hook("acad-ops", bash="acad-ops")) + f"""You are acad-ops. You perform ONE AutoCAD file operation per instruction from the orchestrator: open a drawing,
+switch the active drawing, save a drawing in place, or close a saved drawing. You never edit the drawing: the guard
+blocks entity, layer, block, annotation and view tools, writing LISP, save-as, quit, purge, and every close except
+the one below.
 
 Rules (Jeremy, 2026-11-03):
 - Take the lock first: Read {LOCKS}/acad.lock; if it holds anything other than "released", stop and report
@@ -634,13 +703,24 @@ Rules (Jeremy, 2026-11-03):
 - Save: only when the instruction names that drawing and says its verifier PASSED. Make it the active document,
   confirm DWGNAME, then drawing save with no path (in place). Never save-as. The permission classifier can deny a
   save: then report the drawing as NOT saved and stop; never try another save route.
+- Close (Jeremy 2026-11-09, D2; e.g. before the orchestrator renames a DWG, A47): only on an explicit orchestrator
+  close step ("close <name>.dwg"). Never save as part of it. First activate another open drawing (the Switch form
+  below), then send exactly this (writer_guard allows no other close form):
+  (if (and (eq (vla-get-Saved (setq d (vla-item (vla-get-documents (vlax-get-acad-object)) "<name>.dwg"))) :vlax-true) (not (equal d (vla-get-ActiveDocument (vlax-get-acad-object))))) (progn (vla-Close d :vlax-false) "CLOSED") "NOT CLOSED")
+  "NOT CLOSED" = unsaved changes or still active: report it and stop. After "CLOSED" rerun the identity call to
+  confirm it is gone.
+- A document name listed twice in the identity call (two instances, or a read-only copy) is reported, not
+  guessed at: name both and stop.
 - Never open or launch AutoCAD through computer-use (it starts a second, empty AutoCAD). If even a trivial call times
   out, AutoCAD is blocked (dialog or prompt): stop and report it; never loop. After an AutoCAD restart the bridge
   may need system init.
 - If project.json describes another project, stop and report it (the orchestrator updates it at project start).
 - A file on L: open in Bluebeam Revu (or another user) is locked ("Device or resource busy" / save failure):
   report it; never close or kill another program.
-- Log each operation (instruction, calls, returned strings, DBMOD before/after) to {MAN}/<task-id>.ops.json.
+- Log each operation (instruction, calls, returned strings, DBMOD before/after) to {MAN}/<task-id>.attemptN.ops.json
+  (a one-element list, next free N; also when the instruction names a shared log such as M18-SAVE.ops.json: write
+  <log-stem>.attemptN.ops.json). Never rewrite another log. Bash runs only `python {SWARM}/tools/merge_ops.py
+  <project folder>` (when the instruction asks you to merge; otherwise the orchestrator does it, A48).
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", "Do only the one file operation you were given.")}
 """)
@@ -655,8 +735,8 @@ Load the `revit-conventions` skill when verifying anything in Revit, and the `ac
 anything in AutoCAD.
 
 ## Rules
-- Read ONLY {MAN}/<task-id>.expected.json, plus the three exceptions in the Hardening rules (snapshot warnings,
-  write.json status/post_warnings, visual.json status). If expected.json does not exist, report it; do not verify.
+- Read ONLY {MAN}/<task-id>.expected.json, plus the exceptions in the Hardening rules (snapshot warnings,
+  write.json status/post_warnings/COUNTS/result_source, visual.json status). If expected.json does not exist, report it; do not verify.
   Do not read scripts, write logs, scout manifests, or ask what was done.
   (Exception: for a cleanup check you may read the created ids/handles list in <task-id>.write.log.md, nothing else.)
 - Re-query the live models for every item. Do not trust any claim in a file.

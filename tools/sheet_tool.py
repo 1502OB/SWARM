@@ -8,16 +8,19 @@ y down: the same space as annotation rects, so a located rectangle can be used f
   check  <pdf> <x0,y0,x1,y1> <out_png>                   the rectangle drawn in red with 150 pt of context
   text   <pdf> <out_txt>                                 the page text (for grep across sheets)
 Page 1 is used. Every command prints one JSON line with the output path and the page size.
-Outputs must be under C:/Users/Jeremy/swarm (source folders stay read-only).
+Outputs must be under ~/swarm (source folders stay read-only).
 """
+import os
 import json
 import math
 import sys
 from pathlib import Path
 
 import pymupdf
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from swarm_paths import SWARM  # noqa: E402
 
-OUT_ROOT = Path("C:/Users/Jeremy/swarm").resolve()
+OUT_ROOT = SWARM.resolve()
 MAX_PX = 2400
 
 

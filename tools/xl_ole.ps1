@@ -122,7 +122,9 @@ function Same($a, $b) {
     return ([string]$a) -ceq ([string]$b)
 }
 
-$StateFile = 'C:\Users\Jeremy\swarm\locks\xl_ole_tab.txt'
+# repo root = parent of tools\ (no hard-coded user folder; SWARM_HOME overrides, as in swarm_paths.py)
+$SwarmRoot = if ($env:SWARM_HOME) { $env:SWARM_HOME } else { Split-Path -Parent $PSScriptRoot }
+$StateFile = Join-Path $SwarmRoot 'locks\xl_ole_tab.txt'
 
 function Get-Acad {
     try { return [Runtime.InteropServices.Marshal]::GetActiveObject('AutoCAD.Application') }

@@ -10,8 +10,12 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "C:/Users/Jeremy/swarm/tools")
-WATCH = re.compile(r"[\\/]swarm[\\/](scripts|library)[\\/].+\.lsp$", re.IGNORECASE)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paths import SWARM, fwd, path_re  # noqa: E402  (2026-11-09: no hard-coded user folder)
+
+sys.path.insert(0, fwd(SWARM / "tools"))
+WATCH = re.compile(r"(?:^|[\\/])swarm[\\/](scripts|library)[\\/].+\.lsp$|^" + path_re(SWARM) +
+                   r"[\\/](scripts|library)[\\/].+\.lsp$", re.IGNORECASE)
 
 
 def main():

@@ -1,6 +1,6 @@
 """Exact arithmetic check for calc-auditor findings (orchestrator runs it; agents cannot run Python).
 
-Usage: python C:/Users/Jeremy/swarm/tools/calc_check.py <checks.json> <out.json>
+Usage: python ~/swarm/tools/calc_check.py <checks.json> <out.json>
 
 checks.json (written by calc-auditor):
   {"sheet": "P0.03", "checks": [

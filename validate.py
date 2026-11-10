@@ -1,14 +1,22 @@
 """Validate a JSON file against a swarm schema (standard library only; no jsonschema dependency).
 
-    python C:/Users/Jeremy/swarm/validate.py <schema.json> <file.json>
+    python ~/swarm/validate.py <schema.json> <file.json>
 
+When <file.json> is a <task-id>.expected.json and the sibling <task-id>.task.json exists, that task.json is also
+validated against schemas/task.schema.json and the two task_id values must be equal (LESSONS A40).
 Exit 0 = valid, 1 = invalid (one line per error on stdout), 2 = usage error or unreadable JSON.
 Supports the subset the swarm schemas use: type (incl. lists like ["integer","null"]), enum, required,
 properties, additionalProperties: false, items, minItems, minLength, pattern. "{}" accepts any value.
 """
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from swarm_paths import SWARM  # noqa: E402
+
+TASK_SCHEMA = SWARM / "schemas" / "task.schema.json"
 
 TYPES = {
     "object": lambda v: isinstance(v, dict),
@@ -60,6 +68,30 @@ def load(p):
         return json.load(f)
 
 
+def sibling_task_errors(path, data):
+    """<id>.expected.json -> validate <id>.task.json (if present) and compare task_id."""
+    name = os.path.basename(path)
+    if not name.lower().endswith(".expected.json"):
+        return []
+    task_path = os.path.join(os.path.dirname(os.path.abspath(path)), name[:-len(".expected.json")] + ".task.json")
+    if not os.path.isfile(task_path):
+        return []
+    try:
+        task = load(task_path)
+    except (OSError, ValueError) as e:
+        return [f"sibling {os.path.basename(task_path)}: unreadable ({e})"]
+    errs = []
+    if TASK_SCHEMA.is_file():
+        sub = []
+        check(task, load(TASK_SCHEMA), "$", sub)
+        errs += [f"sibling {os.path.basename(task_path)}: {e}" for e in sub]
+    a = data.get("task_id") if isinstance(data, dict) else None
+    b = task.get("task_id") if isinstance(task, dict) else None
+    if a != b:
+        errs.append(f"$.task_id: {a!r} differs from {b!r} in sibling {os.path.basename(task_path)}")
+    return errs
+
+
 def main():
     if len(sys.argv) != 3:
         print(__doc__.strip().splitlines()[2].strip())
@@ -71,6 +103,7 @@ def main():
         sys.exit(2)
     errors = []
     check(data, schema, "$", errors)
+    errors += sibling_task_errors(sys.argv[2], data)
     if errors:
         print(f"INVALID {sys.argv[2]} ({len(errors)} error(s)):")
         for e in errors:

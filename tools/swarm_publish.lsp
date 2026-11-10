@@ -1,6 +1,6 @@
 ;;; swarm_publish.lsp - publish one prepared DSD (tools/acad_dsd.py) to PDF without dialogs. Library: publish-sheet.
 ;;; Generalised from 22-001 pc9-check/cad/pc9publish.lsp (LESSONS A6/A23). Changes nothing in the drawing.
-;;; acad-writer: (load "C:/Users/Jeremy/swarm/tools/swarm_publish.lsp") then, in a separate short call,
+;;; acad-writer: (load (strcat (swl:swarm-dir) "tools/swarm_publish.lsp")) then, in a separate short call,
 ;;;   (swarm:publish "C:/.../<task>.dsd" "C:/.../<task>.pdf")
 ;;; Runs -PUBLISH in the foreground, restores BACKGROUNDPLOT/FILEDIA/CMDDIA, never overwrites the PDF,
 ;;; and returns a short status: "ran | output exists <bytes>" or "ABORT ..." / "ERROR ...".

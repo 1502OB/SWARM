@@ -13,13 +13,18 @@
 4. `writer_guard.py acad-ops` (acad-ops agent, Jeremy 2026-11-03): AutoCAD file operations only — drawing open
    for DWGs listed in swarm/locks/acad_open_approved.txt (exact file, or folder entry ending in '/'), switching the
    active drawing (one vla-activate call), in-place save, info/status/init, query LISP. Entity edits, save-as,
-   close, quit and purge blocked. Same acad.lock as the writer.
+   quit and purge blocked; close only as in 6. Same acad.lock as the writer.
 5. (2026-11-06) Patterns are matched against code with C# string literals and comments removed (a text note
    "CLOSE TO WALL" or a comment "Audit" is not a call), and the AutoCAD save/close check only reads the command
    strings sent with (command ...), vl-cmdf and vla-SendCommand (a label "EXIT" is not a command). Queued
    commands: vla-SendCommand / vla-PostCommand (raw or through swl:queue-command in the shared library) may send
    only the commands in QUEUE_ALLOWED; reflection that can reach blocked members (GetMethod, InvokeMember) is
    blocked. Tests: hooks/tests/test_guards.py.
+6. (2026-11-09) acad-ops may close a drawing (Jeremy D2) only with the exact ACAD_CLOSE_RE form: Saved = :vlax-true,
+   not the active drawing, (vla-Close d :vlax-false); the orchestrator sends it only on an explicit close step.
+   `writer_guard.py scripter|script-debugger` (Jeremy D1) on Write|Edit: Edit only swarm/scripts/*.lsp and the
+   agent's own manifests (<task-id>.expected.json; debugger also .debug.json); Write only into swarm/scripts/ and
+   those manifests. Paths come from hooks/paths.py (SWARM_HOME, else ~/swarm).
 Exit code 2 blocks the call and feeds stderr back to the agent.
 """
 import json
@@ -30,9 +35,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from guardlib import lisp_command_strings, strip_cs, strip_lisp_comments  # noqa: E402
+from paths import SWARM, fwd, norm  # noqa: E402  (2026-11-09: no hard-coded user folder)
 
-LOCKS = Path(os.environ.get("SWARM_LOCKS_DIR", "C:/Users/Jeremy/swarm/locks"))  # override for hook tests only
-SWARM_LIB = "C:/Users/Jeremy/swarm/library/acad/swarm_lib.lsp"  # shared AutoLISP library (wraps SendCommand)
+LOCKS = Path(os.environ.get("SWARM_LOCKS_DIR", fwd(SWARM / "locks")))  # override for hook tests only
+SWARM_LIB = fwd(SWARM / "library/acad/swarm_lib.lsp")  # shared AutoLISP library (wraps SendCommand)
+TOOLS = fwd(SWARM / "tools")
 # Commands a writer may queue with vla-SendCommand (they cannot run inside the dispatcher's (command) context).
 QUEUE_ALLOWED = re.compile(r"^\s*_?\.?-?(XREF|PDFATTACH|IMAGE|IMAGEATTACH|PUBLISH|REGENALL)\b", re.IGNORECASE)
 REFLECTION_DENY = re.compile(r"\b(GetMethod|InvokeMember)\b")
@@ -118,6 +125,8 @@ def main():
         return ops_main()
     if app == "acad-ops":
         return acad_ops_main()
+    if app in ("scripter", "script-debugger"):
+        return script_files_main(app)
     if app not in ("revit", "acad"):
         block(f"unknown app '{app}'")
     try:
@@ -166,12 +175,61 @@ def main():
     sys.exit(0)
 
 
+# ---- scripter / script-debugger file writes (Jeremy D1, 2026-11-09). `writer_guard.py scripter|script-debugger`
+# on Write|Edit. Edit (a one-paren fix instead of a whole-file rewrite) only on swarm/scripts/*.lsp and the agent's
+# own manifests; Write only into swarm/scripts/ (scripts of any kind, incl. .cs) and the agent's own manifests.
+# The hook payload carries no task id, so "own manifests" = the manifest kinds that agent produces, in a project's
+# manifests folder (swarm/<project>/manifests or the legacy swarm/manifests), named <task-id>.<kind>.json.
+OWN_MANIFESTS = {
+    "scripter": ("expected",),
+    "script-debugger": ("debug", "expected"),
+}
+TASK_FILE = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+
+
+def script_file_problem(agent, tool, path):
+    """None if this agent may Write/Edit this file, else why not."""
+    if not path:
+        return f"{tool} without a file_path"
+    target = norm(path)
+    root = norm(SWARM)
+    kinds = "|".join(re.escape(k) for k in OWN_MANIFESTS[agent])
+    manifest = re.compile(rf"^{re.escape(root)}/(?:[^/]+/)?manifests/{TASK_FILE}\.(?:{kinds})\.json$")
+    if manifest.match(target):
+        return None
+    if tool == "Edit":
+        if re.match(rf"^{re.escape(root)}/scripts/{TASK_FILE}\.lsp$", target):
+            return None
+        return (f"{agent} may Edit only {fwd(SWARM)}/scripts/<file>.lsp and its own manifests "
+                f"(<task-id>.{{{','.join(OWN_MANIFESTS[agent])}}}.json); write a new file with Write instead")
+    if re.match(rf"^{re.escape(root)}/scripts/{TASK_FILE}$", target):
+        return None
+    return (f"{agent} may Write only into {fwd(SWARM)}/scripts/ and its own manifests "
+            f"(<project>/manifests/<task-id>.{{{','.join(OWN_MANIFESTS[agent])}}}.json)")
+
+
+def script_files_main(agent):
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        block("could not parse hook input")
+    tool = payload.get("tool_name", "")
+    if tool not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+        sys.exit(0)
+    ti = payload.get("tool_input") or {}
+    path = str(ti.get("file_path") or ti.get("notebook_path") or "")
+    why = script_file_problem(agent, "Edit" if tool != "Write" else "Write", path)
+    if why:
+        block(why)
+    sys.exit(0)
+
+
 def lint_problem(path):
     """None if swarm/tools/lsp_lint.py finds no errors in the .lsp about to be loaded (or cannot run), else why."""
     if not path.lower().endswith(".lsp"):
         return None
     try:
-        sys.path.insert(0, "C:/Users/Jeremy/swarm/tools")
+        sys.path.insert(0, TOOLS)
         from lsp_lint import lint  # noqa: E402
         errors, _warnings = lint(path)
     except Exception:
@@ -179,7 +237,7 @@ def lint_problem(path):
     if errors:
         first = "; ".join(f"{c} line {l}: {m}" for c, l, m in errors[:3])
         return (f"{Path(path).name} fails lsp_lint ({len(errors)} error(s): {first}); send it back to the scripter "
-                "(python C:/Users/Jeremy/swarm/tools/lsp_lint.py <file> shows all)")
+                f"(python {TOOLS}/lsp_lint.py <file> shows all)")
     return None
 
 
@@ -262,6 +320,19 @@ ACAD_OPS_ALLOWED = {
 ACAD_ACTIVATE_RE = re.compile(
     r'^\(\s*vla-activate\s+\(\s*vla-item\s+\(\s*vla-get-documents\s+\(\s*vlax-get-acad-object\s*\)\s*\)\s+'
     r'"[^"\\]{1,255}\.dwg"\s*\)\s*\)$', re.IGNORECASE)
+# Close (Jeremy D2, 2026-11-09): only when the orchestrator instruction says close, only a SAVED drawing that is not
+# the active one, never saving (:vlax-false). Exactly this form, with the drawing name as one literal:
+# (if (and (eq (vla-get-Saved (setq d (vla-item (vla-get-documents (vlax-get-acad-object)) "<name>.dwg"))) :vlax-true)
+#          (not (equal d (vla-get-ActiveDocument (vlax-get-acad-object)))))
+#   (progn (vla-Close d :vlax-false) "CLOSED") "NOT CLOSED")
+_DOCS = r'\(\s*vla-get-documents\s+\(\s*vlax-get-acad-object\s*\)\s*\)'
+ACAD_CLOSE_RE = re.compile(
+    r'^\(\s*if\s+\(\s*and\s+'
+    r'\(\s*eq\s+\(\s*vla-get-Saved\s+\(\s*setq\s+([A-Za-z][\w-]{0,30})\s+\(\s*vla-item\s+' + _DOCS +
+    r'\s+"[^"\\]{1,255}\.dwg"\s*\)\s*\)\s*\)\s+:vlax-true\s*\)\s+'
+    r'\(\s*not\s+\(\s*equal\s+\1\s+\(\s*vla-get-ActiveDocument\s+\(\s*vlax-get-acad-object\s*\)\s*\)\s*\)\s*\)\s*\)\s+'
+    r'\(\s*progn\s+\(\s*vla-Close\s+\1\s+:vlax-false\s*\)\s+"[^"\\]{0,80}"\s*\)\s+"[^"\\]{0,80}"\s*\)$',
+    re.IGNORECASE)
 
 
 # Document-level calls the read-only deny list doesn't cover (close / quit / open / activate outside the template).
@@ -318,12 +389,14 @@ def acad_ops_main():
             block(why)
     if short == "system" and op == "execute_lisp":
         code = str(data.get("code", "")).strip()
-        if not ACAD_ACTIVATE_RE.match(code):
+        if not (ACAD_ACTIVATE_RE.match(code) or ACAD_CLOSE_RE.match(code)):
             sys.path.insert(0, str(Path(__file__).parent))
             from acad_readonly_guard import LISP_DENY  # noqa: E402
             m = LISP_DENY.search(code + " ") or ACAD_OPS_LISP_DENY.search(code)
             if m:
-                block(f"execute_lisp contains '{m.group(1)}'; acad-ops runs only query LISP or one vla-activate call")
+                block(f"execute_lisp contains '{m.group(1)}'; acad-ops runs only query LISP, one vla-activate call, "
+                      "or (on a close instruction) the exact close form in writer_guard.py ACAD_CLOSE_RE: Saved "
+                      "check, not the active drawing, (vla-Close d :vlax-false)")
     sys.exit(0)
 
 

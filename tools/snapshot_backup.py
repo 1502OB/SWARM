@@ -1,19 +1,22 @@
 """Copy the open model / drawing files into swarm/backups/<run-id>/ for snapshot-taker. Never overwrites.
 
-    python C:/Users/Jeremy/swarm/tools/snapshot_backup.py <run-id> "<file>" ["<file>" ...]
+    python ~/swarm/tools/snapshot_backup.py <run-id> "<file>" ["<file>" ...]
 
 Prints one JSON object: {"run_id", "dest", "files": [{"source", "backup": "copied|locked|cloud|missing|exists|error",
 "path"?, "bytes"?, "error"?}]}. Exit 0 if every file was copied, 1 otherwise (the agent must report "locked"/"cloud"
 to the orchestrator so Jeremy can save-as by hand).
 Cloud models (ACC / BIM 360 paths) cannot be copied from disk: reported as "cloud".
 """
+import os
 import json
 import re
 import shutil
 import sys
 from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from swarm_paths import SWARM  # noqa: E402
 
-BACKUPS = Path("C:/Users/Jeremy/swarm/backups")
+BACKUPS = SWARM / "backups"
 CLOUD = re.compile(r"^(BIM ?360|Autodesk Docs|cloud)[:/]", re.IGNORECASE)
 
 

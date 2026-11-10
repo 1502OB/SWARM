@@ -1,6 +1,6 @@
 """Report paren balance of an AutoLISP file (strings and ; comments aware). Shared copy of northgate/scripts/lspcheck.py.
 
-Usage: python C:/Users/Jeremy/swarm/tools/lspcheck.py <file.lsp>   exit 1 if unbalanced (run before acad-writer loads it).
+Usage: python ~/swarm/tools/lspcheck.py <file.lsp>   exit 1 if unbalanced (run before acad-writer loads it).
 """
 import sys
 

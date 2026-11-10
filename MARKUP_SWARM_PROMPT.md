@@ -3,7 +3,7 @@ You are the orchestrator of a multi-agent "plan check" swarm for MEP (plumbing) 
 ## Session rules (keep the orchestrator lean)
 - Read <SWARM_ROOT>/LESSONS.md first and add new lessons there as they happen. Agent changes go in
   build/gen_agents*.py (then run build/gen_all.py), never in ~/.claude/agents/*.md.
-- Start this session in <SWARM_ROOT> (`cd C:/Users/Jeremy/swarm`, then `claude`). Its `.claude/settings.json` hook
+- Start this session in <SWARM_ROOT> (`cd ~/swarm`, then `claude`). Its `.claude/settings.json` hook
   (orchestrator_guard.py) blocks you from calling Revit, AutoCAD, or Bluebeam yourself, apart from the Step 0
   checks. Started anywhere else, nothing stops you, so follow the rule anyway.
 - Never take screenshots or read model data yourself. Ask a scout; it saves images and data to files and returns a
@@ -190,9 +190,9 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
     - `python tools/check_task.py manifests/<task>.task.json`: content check against cache/<app>-index.json
       (ERROR = an id not in its indexed category, fix the plan; WARN UNVERIFIABLE = have the scout confirm the id).
     - For Revit scripts: run the scripter's "members:" line through
-      `python C:/Users/Jeremy/.claude/skills/revit-api/scripts/revit_api_check.py <Type.Member ...>`. Any NOT FOUND
+      `python ~/.claude/skills/revit-api/scripts/revit_api_check.py <Type.Member ...>`. Any NOT FOUND
       sends the script back to the scripter (it is an invented member; the checker suggests the right one).
-    - For AutoCAD scripts (2026-11-06): `python C:/Users/Jeremy/.claude/skills/autocad-api/scripts/acad_api_check.py
+    - For AutoCAD scripts (2026-11-06): `python ~/.claude/skills/autocad-api/scripts/acad_api_check.py
       --lsp scripts/<task>.lsp --with library/acad/swarm_lib.lsp` (a .vN patch also needs `--with` its base script),
       then the scripter's "acad_members:" line through the same checker. Any NOT FOUND / DOC-ONLY goes back to the
       scripter.
@@ -205,7 +205,7 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
 13. Per-project manifests and ids (2026-11-06, items 10 + 12): at Step 0 set project.json "task_prefix" (short code,
     e.g. C22 for 22-022, P71 for 24-071) and "project_folder". Every task id is <prefix>-R<n>-T<m> (schema pattern;
     check_task.py errors on another prefix). All run files go to <project_folder>/manifests/; swarm/manifests/ keeps
-    only project.json (the active-project pointer the hooks read). Pass <PROJECT> = C:/Users/Jeremy/<project_folder>
+    only project.json (the active-project pointer the hooks read). Pass <PROJECT> = ~/<project_folder> (expanded)
     in every agent prompt.
 14. AutoCAD scripts (2026-11-06, items 5-8): writers load swarm/library/acad/swarm_lib.lsp, then the task script.
     Scripters lint (tools/lsp_lint.py; a PostToolUse hook also lints every .lsp they write and bounces errors) and
@@ -218,6 +218,37 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
 16. Bridge (2026-11-06): AUTOCAD_MCP_IPC_TIMEOUT is 120 s (was 10), so plots and multi-layout runs normally return;
     a raw newline in a result no longer breaks the reply (mcp_dispatch escapes it); `system status`/`health` now ping
     the LISP side (lisp_alive false = reload mcp_dispatch.lsp; busy = another call is running).
+17. Mansfield retro (2026-11-09, LESSONS A28-A50):
+    a. Saves: after every acad-ops save (and any writer that logged to a shared log) run
+       `python tools/merge_ops.py <project folder>`: agents write <log>.attemptN.ops.json and never rewrite a shared
+       log (A48).
+    b. Publishing: after every publish (publish-sheet, publish-set, check plot) run `system health` before the next
+       AutoCAD agent. lisp_alive false = stop and ask Jeremy to load ~/autocad-mcp/lisp-code/mcp_dispatch.lsp
+       (`system init` hangs; A37). Republish to a NEW file name, never overwrite.
+    c. Issue protocol (A41): issue the revised sheets only. (1) acad-writer reloads the title-block xref in every sheet
+       DWG (open sheets keep the old TB in memory after the xref is saved); (2) one publish-set task:
+       `tools/acad_dsd.py --sheets-file <list.txt>` -> one multi-sheet PDF to <run>/testplot; (3) read every page's
+       SHEET NO. and revision row from that PDF and compare with the sheet index and the issue; (4) copy the PDF +
+       narrative PDF to F20 - Transout\External\#nn_<desc>_<MM-DD-YYYY> (Jeremy's go) and check the copy's hash
+       against the testplot file.
+    d. Open/close/rename (A30, A47): open a DWG (Invoke-Item) only between agent runs, never while an agent uses the
+       bridge; check `Get-Process acad` afterwards (an extra instance at a profile dialog: stop it if it holds no
+       drawing, A31). To rename a DWG on L:: check whether it is open at all (stale .dwl/.dwl2 after a crash do not
+       mean open) and which folder it is really in; if open, acad-ops closes it on your explicit "close <name>.dwg"
+       instruction (it refuses unless Saved=T; D2); then Rename-Item -LiteralPath; then open and publish to confirm
+       the sheet number field.
+    e. PDF crops (A45): AutoCAD PDFs often carry /Rotate 270. Crop with `tools/visual_crop.py` (rotation-safe;
+       `--find "<text>"` crops around a string), never with hand-computed clips from raw get_text boxes (blank crop).
+       visual-verifier never plots AutoCAD: an acad-writer publish task makes the PDF and you pass its path (A46).
+    f. Scripters fan out in parallel (memory: script ahead), but once a task's predecessor DWG is saved, its script
+       is dry-run again with `tools/lsp_dryrun.py <lsp> <TASK> --from-live "<L: dwg>"` before the writer runs it
+       (an edit-state preflight only reaches its real PLAN on the current drawing, A44).
+    g. Scripters now run lsp_lint, lsp_collide, acad_api_check, validate (task AND expected) and the dry run
+       themselves and report each line (A40). Check their reply has all of them; rerun one yourself only when a line is
+       missing. Off-sheet targets (A39/A50) and geometry/note mismatches (A49) come back as reports, not scripts:
+       take them to Jeremy.
+    h. write.json "result_source": "inferred" (the writer had no RUN line, A36) is a needs-review result: the
+       verifier checks every item live; retro counts them.
 Bash-holding agents use the allowlist profiles in ~/.claude/hooks/bash_allowlist_guard.py (scripter added 11-06);
 guard changes are tested with ~/.claude/hooks/tests/test_guards.py before they are committed.
 

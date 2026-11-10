@@ -82,3 +82,24 @@ Read before writing or fixing a script. New lessons go here, plus a one-line poi
   coordinates can be in a rotated content space). Check with a test plot that the highlight sits on the right row.
 - PDF underlays crop: to fill an A&O sheet border with another A&O-format sheet, crop the PDF to the inner border
   (x 1.25..38.75, y 0.5..29.5 in) with a cropbox and attach at (1.25,0.5) scale 1 (P012, Fuscoe C6.0).
+
+## Mansfield 2026-11-09 (2018 930 S. Mansfield, run 20261109-1100; swarm/LESSONS.md A32-A50)
+- A32 PLAN and CHECK test the same geometry: build one note-group box (swl:group-box) and call it from both.
+- A33 Viewport containment of geometry you are NOT moving needs a tolerance (swl:inside-vp-tol, 0.10 in default).
+- A34 MText bottom = bbox top - max(bbox height, DXF 43), only via swl:mtext-bottom; insertion y - DXF 43 can be nonsense.
+- A35 Exclude FRAME (sheet/table borders) from cloud clash hits only for edges placed ON a border ((swl:clash-ex space box skip pad cap exclude-layers)); new text still treats FRAME as an obstacle.
+- A36 Every c:<TASK>-PLAN/-RUN/-CHECK/-CLEAN ends with (swl:result-out "<TASK>" (swl:result ...)) (writes scripts/<task>.result.txt and returns the line); princ-only commands give an empty payload (lint W5).
+- A37 After a publish the bridge dispatcher can drop: run `system health` after every publish and stop if lisp_alive is false; republish to a new file name, never overwrite.
+- A38 Title-block swap CHECK compares the plotted title with the sheet index wording (a hidden "PLAN PLAN" surfaced on a swap).
+- A39 A model-space target outside every floating viewport never plots: report "off-sheet", do not cloud it (swl:on-sheet-p).
+- A40 task_id comes from task.json and matches ^[A-Z][A-Z0-9]{1,5}-[A-Z0-9]+-T[0-9]+[a-z0-9]*$; scripters run api_check, lsp_collide, lsp_lint and validate (task AND expected) themselves; read created.txt record kinds (C copy, L cloud, T tag), not write.json labels.
+- A41 Issue sets: reload the title-block xref in every sheet before publishing (open sheets keep the old one), publish one multi-sheet PDF (acad_dsd.py --sheets-file), read each page's SHEET NO. and revision row; revised sheets only.
+- A42 Case collisions also happen between locals of one defun (ne/nE are one symbol): lsp_collide.py "local-collisions".
+- A43 swl:ent returns entget DATA, not an ename: name data ed*, enames e*/en*, pass (cdr (assoc -1 ed)) (lint W7).
+- A44 Edit/done-state scripts name values by meaning (planned-move vs current-offset) and dry-run with lsp_dryrun.py --from-live on the current drawing once the prior task is saved.
+- A45 AutoCAD PDFs can carry /Rotate 270: word boxes are unrotated, clips are rotated; crop with tools/visual_crop.py (rotation-safe, --find).
+- A46 visual-verifier never plots AutoCAD: an acad-writer publish task makes the PDF, visual-verifier only crops it.
+- A47 Before renaming a DWG on L: check it is really open (stale .dwl after a crash) and which folder it is in; acad-ops closes it only if Saved=T on an explicit instruction; Rename-Item -LiteralPath, then open + publish to confirm the sheet number field.
+- A48 Shared JSON logs are never rewritten: each agent writes <log>.attemptN.ops.json and the orchestrator merges (tools/merge_ops.py).
+- A49 Drawing geometry contradicts a note (10 meters drawn vs "20 IN 2 ROWS"): no script; report the counts and options.
+- A50 A layout with no floating viewport (only DXF 69 = 1) shows no model space: its model-space text is off-sheet (swl:floating-vps).

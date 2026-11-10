@@ -34,4 +34,4 @@ description: Extracted, page-indexed plumbing code and local amendment text (CPC
 - A table appears on every page that mentions it (contents, cross references); the page where the table itself is
   printed is the one whose text starts the table block. Read the candidate pages; cite the printed table page.
 - Not indexed: UPC 2021, IPC, 2016/2015 codes, other cities. Add a PDF with:
-  `python C:/Users/Jeremy/.claude/skills/plumbing-code/scripts/code_index.py "<code.pdf>" <edition-folder> --label "<name>"`
+  `python ~/.claude/skills/plumbing-code/scripts/code_index.py "<code.pdf>" <edition-folder> --label "<name>"`

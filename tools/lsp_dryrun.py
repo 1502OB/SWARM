@@ -1,6 +1,12 @@
 """Dry-run an AutoLISP script headless, on a COPY of the drawing, without the live AutoCAD (2026-11-06).
 
-    python C:/Users/Jeremy/swarm/tools/lsp_dryrun.py <script.lsp> <drawing.dwg> <TASK> [--run] [--timeout 120]
+    python ~/swarm/tools/lsp_dryrun.py <script.lsp> <drawing.dwg> <TASK> [--run] [--timeout 120]
+    python ~/swarm/tools/lsp_dryrun.py <script.lsp> <TASK> --from-live "<live drawing.dwg>" [--run] [--timeout 120]
+
+--from-live (LESSONS A44): dry-run on the CURRENT saved state of the live drawing (e.g. the L: sheet after the prior
+  tasks were saved) instead of the pre-run backup, so a script with edit/done states reaches its real PLAN. The live
+  file is only read: it is copied to swarm/scratch/live/<timestamp>/<name> first and everything below runs on that
+  copy. Unsaved edits in the open AutoCAD session are not in the copy (acad-ops saves after each pass).
 
 Uses AutoCAD 2027's Core Console (accoreconsole.exe, full AutoCAD only) in its own process:
   1. copies <drawing.dwg> to swarm/scratch/dryrun/<TASK>/<timestamp>/ (the original and the live session are never
@@ -14,12 +20,13 @@ Status in the printed JSON:
   needs_full_autocad loaded fine, but PLAN/RUN stopped on ActiveX (vla-*, vlax-*, layoutlist): the Core Console has
                      no ActiveX, so the writer's dry run in the live AutoCAD must cover that part (not a script error)
   errors             a load error (malformed list, unbalanced parens), an undefined function, or a runtime error
-  plan_failed        PLAN/RUN ran but returned its own ABORT / ROLLED_BACK / failed>0 (e.g. its preflight refused)
+  plan_failed        PLAN/RUN ran but returned its own ABORT / ROLLED_BACK / failed>0 / fail>0 (e.g. its preflight refused)
 Exit 0 = clean or needs_full_autocad, 1 = errors or plan_failed, 2 = usage / Core Console missing or timed out.
 Probe 2026-11-06 (P003 copy): load, plain LISP, entmake and ssget work; vlax-get-acad-object returns nil and
 layoutlist is undefined. Run accoreconsole from Python/PowerShell: started from Git Bash it hangs at the prompt.
 """
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -27,11 +34,16 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from swarm_paths import SWARM  # noqa: E402
+
 CORE = Path("C:/Program Files/Autodesk/AutoCAD 2027/accoreconsole.exe")
-SWARM = Path("C:/Users/Jeremy/swarm")
 LIB = SWARM / "library" / "acad" / "swarm_lib.lsp"
 ACTIVEX = re.compile(r"VLA-OBJECT nil|no function definition: (VLA-|VLAX-|LAYOUTLIST)|ActiveX|vlax-get-acad-object",
                      re.IGNORECASE)
+# a PLAN/RUN/test that returned its own failure: ABORT, ROLLED_BACK, failed=N or fail=N with N > 0 (swl:result
+# writes failed=, library tests write fail=)
+ABORTED = re.compile(r"\bABORT\b|\bROLLED_BACK\b|\bfailed=0*[1-9]|\bfail=0*[1-9]")
 ERROR = re.compile(r"; error: (.+)|^error: (.+)|malformed list|unbalanced", re.IGNORECASE)
 
 
@@ -39,16 +51,45 @@ def lisp_str(p: Path) -> str:
     return '"' + p.as_posix().replace('"', '\\"') + '"'
 
 
+def copy_live(src: Path) -> Path:
+    """Read-only copy of the live drawing into swarm/scratch/live/<stamp>/<same name>. Never writes to src."""
+    base = SWARM / "scratch" / "live"
+    stamp, k = time.strftime("%Y%m%d-%H%M%S"), 0
+    work = base / stamp
+    while work.exists():
+        k += 1
+        work = base / f"{stamp}-{k}"
+    work.mkdir(parents=True)
+    dst = work / src.name
+    with open(src, "rb") as fi, open(dst, "wb") as fo:  # plain read of the source; no copystat/metadata writes
+        shutil.copyfileobj(fi, fo, 1 << 20)
+    return dst
+
+
 def main():
     args = sys.argv[1:]
+    live = None
+    if "--from-live" in args:
+        i = args.index("--from-live")
+        if i + 1 >= len(args):
+            print(__doc__.strip().splitlines()[3].strip())
+            sys.exit(2)
+        live = Path(os.path.abspath(args[i + 1]))  # abspath, not resolve(): keep L:\ as L:\
+        del args[i:i + 2]
     run_too = "--run" in args
     timeout = 120
     if "--timeout" in args:
         timeout = int(args[args.index("--timeout") + 1])
         del args[args.index("--timeout"):args.index("--timeout") + 2]
     args = [a for a in args if a != "--run"]
+    if live is not None:
+        if len(args) != 2:  # --from-live replaces the <drawing.dwg> argument
+            print(__doc__.strip().splitlines()[3].strip())
+            sys.exit(2)
+        args = [args[0], str(live), args[1]]
     if len(args) != 3:
         print(__doc__.strip().splitlines()[2].strip())
+        print(__doc__.strip().splitlines()[3].strip())
         sys.exit(2)
     script, dwg, task = Path(args[0]).resolve(), Path(args[1]), args[2]
     if not CORE.exists():
@@ -57,6 +98,9 @@ def main():
     if not script.is_file() or not dwg.is_file():
         print(json.dumps({"status": "errors", "error": f"missing: {script if not script.is_file() else dwg}"}))
         sys.exit(1)
+    live_src = None
+    if live is not None:
+        live_src, dwg = dwg, copy_live(dwg)
     base = SWARM / "scratch" / "dryrun" / re.sub(r"[^A-Za-z0-9_.-]", "_", task)
     stamp, k = time.strftime("%Y%m%d-%H%M%S"), 0
     work = base / stamp
@@ -109,7 +153,7 @@ def main():
     real = list(dict.fromkeys(real))
     loaded = "load_ok" in steps
     # a PLAN/RUN that returned but reported its own failure (ABORT / ROLLED_BACK / failed>0) is not clean
-    aborted = [s for s in steps if "_ok " in s and re.search(r"\bABORT\b|\bROLLED_BACK\b|failed=[1-9]", s)]
+    aborted = [s for s in steps if "_ok " in s and ABORTED.search(s)]
     if real or not loaded:
         status = "errors"
     elif activex:
@@ -121,6 +165,8 @@ def main():
     report = {"status": status, "task": task, "loaded": loaded, "steps": steps, "errors": real, "aborted": aborted,
               "activex_limits": list(dict.fromkeys(activex)), "seconds": round(time.time() - t0, 1),
               "exit_code": code, "work": work.as_posix(), "copy_of": dwg.as_posix()}
+    if live_src is not None:
+        report["from_live"] = live_src.as_posix()
     print(json.dumps(report, indent=1))
     sys.exit(1 if status in ("errors", "plan_failed") else 0)
 
