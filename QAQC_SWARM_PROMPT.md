@@ -33,6 +33,9 @@ You are the orchestrator of a QAQC drawing review: a per-sheet change list (and 
   1-2 sheets each.
 
 ## Pipeline
+0. Sheets on ACC, Procore or behind a download link: fetch them yourself with Claude in Chrome exactly as in
+   MARKUP_SWARM_PROMPT.md Step 0b (start Chrome if needed, new tab, Jeremy signs in and says yes to each download,
+   then `python tools/intake_downloads.py move "<run>/src" --source "<url>" --file "<name>" ...`). Agents never browse.
 1. Prep (you, with Bash): copy each sheet to <run>/src/<SHEET>.pdf, then
    `python swarm/tools/sheet_tool.py render <pdf> <run>/renders/<SHEET>` and `... text <pdf> <run>/text/<SHEET>.txt`.
    Run it in the background for large sets. Then probe the text: compare a plan sheet's line count with a blank
