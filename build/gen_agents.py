@@ -236,7 +236,13 @@ def harden_writer(lock, warnings):
   group is rolled back; never leave a partial result. Record status "rolled_back" and the failing item id in error.
   If the return shows a partial commit that was not rolled back, record status "failed" with error starting
   "PARTIAL:" and stop.
-- Post warnings: after executing, re-query {warnings} and record it in write.json as post_warnings.
+- Post warnings: read {warnings} in its own call just before the real run (log it as pre_warnings in
+  write.log.md) and again after executing; record the real after-count in write.json as post_warnings (never 0 as a
+  placeholder, never a count the script computed inside its transaction: LESSONS R52).
+- One current record (R53): <task-id>.write.json always describes the task's CURRENT state. Rewrite it after each
+  stage or retry (status, COUNTS, created ids, post_warnings); never leave a superseded "timeout" in place after a
+  later success. Stage detail goes in sections of write.log.md, never in <task>.A.write.json side files.
+  Always set "result_source" ("returned" when the RUN line came back in the reply).
 - Counts (AU CS2138 "count what it did and what it skipped"): copy the script's `done=<n> skipped=<n> failed=<n>`
   line into write.json as item {{"id":"COUNTS","result":"done=<n> skipped=<n> failed=<n>"}}. A return without that
   line, or with failed > 0, is not "success".
@@ -244,7 +250,7 @@ def harden_writer(lock, warnings):
   before anything else touches the app, and it is never re-run automatically.
 - write.json must validate against {SCHEMAS}/write.schema.json (run the validator on it after writing it): exactly
   run_id, task_id, status (success|failed|rolled_back|invalid_manifest|already_applied|timeout), executed_at (ISO
-  time), items [{{id, result}}], post_warnings, error (string or null). A timeout is status "timeout" with error
+  time), items [{{id, result}}], post_warnings, result_source (returned|file|inferred), error (string or null). A timeout is status "timeout" with error
   starting "TIMEOUT:"; a NO_GO dry run is "failed" with "NO_GO:". Everything else the procedure says to log (document, script
   path, dry-run and raw return, created ids/handles, post_check, tool calls) goes to {MAN}/<task-id>.write.log.md.
 """
@@ -256,9 +262,16 @@ HARDEN_VERIFIER = f"""## Hardening rules
   call is blocked), report "invalid expected.json: <validator output>" for that task instead of guessing. Items are
   {{id, check, expected_value}}.
 - Warnings: read {SNAP}/<run-id>.snapshot.json and, from {MAN}/<task-id>.write.json, only status and post_warnings.
-  If post_warnings is greater than the snapshot's warnings count for that app (revit.warnings_count, or
-  acad.audit_errors when it is not null), mark the task FAIL with reason "new warnings introduced" and list the new
-  warnings (get_warnings, compared with the snapshot's list).
+  The baseline is the writer's pre_warnings in {MAN}/<task-id>.write.log.md when it is there (R52: the snapshot can
+  be days old); else the snapshot's count for that app (revit.warnings_count, or acad.audit_errors when it is not
+  null). If post_warnings is greater than the baseline, mark the task FAIL with reason "new warnings introduced" and
+  list the new warnings (get_warnings), unless expected.json names those warning families as expected for the change
+  (a pipe re-route adds open-connector / flow-direction warnings); then list them as expected.
+- If write.json status is "timeout" but write.log.md records a later successful stage, report "stale write.json"
+  and verify every item live (R53).
+- Identify the run's elements by the created-id lists in write.log.md / the script return, never by "id > N" (R51).
+- Schedule cell text and row counts of a schedule made in the same session read blank from GetCellText: mark those
+  items null with "check on the sheet PDF (visual)", not FAIL (R55).
 - For any task that adds a revision or revision cloud, additionally verify: the revision appears in the affected
   sheet's revision schedule, the cloud is tagged, the revision number and description match expected.json, and the
   cloud arcs bulge outward (clockwise boundary per the revit-conventions skill).
@@ -344,6 +357,11 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
 - For every element a later task will edit, report WorksharingUtils.GetCheckoutStatus and the owner
   (GetWorksharingTooltipInfo): a borrowed element blocks the writer with a dialog.
 - Linked views: match host plans to arch background views by level ProjectElevation and building prefix, not name.
+- Reconcile mode (after a Revit crash, reopen or timeout; LESSONS O31): report what of the task is in the model,
+  current checkout status of the task's elements, category counts vs the last index (name every element missing
+  or extra), and the warnings list. Earlier digests are stale; say which facts changed.
+- Find a run's elements by the created-id lists in the write log, never by "id > N" (R51); report ids that appear
+  in neither the list nor the baseline as "not ours (Jeremy?)" with their creator (GetWorksharingTooltipInfo).
 
 {harden_scout("revit")}
 {COMMON}
@@ -425,6 +443,32 @@ Read those; do not look for a scout manifest that was not listed.
        LinkedViewId. Hidden-by-default worksets: SetWorksetVisibility per view (or our template).
      - Schedule filters: Contains only on string fields, AND only. Titles white with black bold text (grayscale plots).
      - EditFamily / LoadFamily / Document.Export need transactionMode "none".
+     P71 rules (2026-11-12, LESSONS R47-R56; retro/20261110-p71.md):
+     - Geometry/pipe/delete scripts: the dryrun REACHES COMMIT. transactionMode "none", TransactionGroup, the
+       Transaction commits, then the group rolls back; capture failures with an Application.FailuresProcessing
+       lambda (severity, text, failing ids; ProceedWithRollBack on errors; remove the handler in finally). Return
+       "commit: Committed|RolledBack failureTotal=<n>" plus the failure list. A dryrun that returns before Commit
+       does not count (P71-SAN-T1 v2 passed such a dryrun, then failed at Commit and crashed Revit).
+     - Stage irreversible deletes/moves (parameters[1] "A") apart from new geometry ("B"); each stage idempotent
+       (finds what an earlier stage already made) and dry-run on its own.
+     - Self-checks roll back only on hard faults (length < 0.1 ft, flipped direction, no fall); preferred lengths
+       go to an info list. Always build the full report before a rollback.
+     - Pipe branches: start from {LIBRARY}/revit/pipe-branch-to-main.cs. Branch to a sloped main = level stub,
+       perpendicular tee, or tee family + BreakCurve + ConnectTo; never NewTeeFitting/NewTakeoffFitting off a
+       sloped or vertical pipe, never a vertical into a horizontal header; >= 2.0 ft between tees, >= 1.5 ft
+       horizontal runs, >= 0.5 ft drops, no jog shorter than 2x the fitting take-off. Budget the fall first
+       (1/4 in/ft from the tie); a leg with no fall is reported, not drawn.
+     - The dryrun reports, per created/copied/moved element, every property expected.json checks (level,
+       workset, symbol, host, Z) and resolves every cascade-deleted id (Document.Delete result) to category +
+       type name. CopyElement keeps the SOURCE level: set FAMILY_LEVEL_PARAM, then restore Z.
+     - Return ALL ids the commit created (before/after id sets over the categories touched), incl. elements
+       Revit spawns; never "id > N" (Jeremy edits the model at the same time).
+     - Do not count warnings in the script (taken before regeneration); the writer calls get_warnings.
+     - Cosmetic settings (FormatOptions, widths, styles) are non-fatal: check IsValidAccuracy / IsValidForSpec,
+       UnitTypeId.Fixed for plain counts, add a note and continue.
+     - Fully qualify every type from Autodesk.Revit.DB.Plumbing / .Mechanical / .Electrical, enums too
+       (Autodesk.Revit.DB.Plumbing.PipeSystemType.Sanitary): short names fail "inaccessible due to its protection
+       level" and revit_api_check does not catch it.
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
    - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
@@ -602,6 +646,14 @@ Load the `revit-conventions` skill first.
 - The model is workshared on ACC: never Save, SynchronizeWithCentral, or relinquish (revit-ops does that after
   the verifier passes). Leave changes local.
 - Only small fixes are allowed (a typo that breaks compilation). Log any edit you made to the script.
+- Dry run gate (2026-11-12, LESSONS R47/R50/R54): never skip the dry run of a task that creates or deletes geometry,
+  pipes, schedules or views, even when told to; say "dry run required (R54)" and stop. For geometry/pipe/delete
+  scripts the dry run must report "commit: Committed failureTotal=0" (it reached Commit inside a rolled-back
+  group): a dry run that stopped before Commit, or has failures > 0, is NO_GO. Before the real run, compare the
+  dry-run report with every expected.json item (level, workset, symbol, Z, counts): a mismatch is NO_GO with the
+  values. List cascade deletes by category + type; unnamed cascade ids are NO_GO until the scout names them.
+- Refuse a run whose snapshot is older than the last Revit reopen or crash the orchestrator told you about
+  (report "stale snapshot (O30)").
 - {REVIT_SERIAL}
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", REVIT_SAVE_RULE)}

@@ -11,7 +11,9 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
   view and text/value first; write without a snapshot for the current run id; put a cloud on an issued revision or
   invent a revision; edit an element another user has borrowed (check WorksharingUtils.GetCheckoutStatus in the
   dryrun: Revit raises an editing-request dialog that blocks the bridge); edit a view template shared with other
-  buildings (make a copy); declare a class in a script (the code is a method body).
+  buildings (make a copy); declare a class in a script (the code is a method body); skip the dry run, or write
+  geometry/pipes/deletes after a dry run that stopped before Commit (it must commit inside a rolled-back
+  TransactionGroup and report failureTotal=0: references/scripting-lessons.md "P71", R47/R54).
 - **Irreversible, and how it is softened:** deletes cannot be undone by cleanup, so the restore point is the ACC
   version made by SYNC A (say so in the task's cleanup note); parameter and crop/position edits return the old
   values so a cleanup script can put them back; model-wide or shared-type changes need Jeremy's OK per batch.

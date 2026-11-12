@@ -10,7 +10,8 @@
     "executed_at",
     "items",
     "post_warnings",
-    "error"
+    "error",
+    "result_source"
   ],
   "properties": {
     "run_id": {
@@ -76,7 +77,7 @@
         "file",
         "inferred"
       ],
-      "description": "where the RUN line came from: returned = the c:<task>-RUN return value, file = <task>.result.txt, inferred = re-queried by the writer because the payload was empty (LESSONS A36)"
+      "description": "where the RUN line came from: returned = the c:<task>-RUN return value, file = <task>.result.txt, inferred = re-queried by the writer because the payload was empty (LESSONS A36). Required since 2026-11-12 (LESSONS R53); Revit writers use returned."
     }
   }
 }

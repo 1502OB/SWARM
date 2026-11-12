@@ -39,7 +39,9 @@ write("snapshot-taker", fm(
     hooks(PROJECT_GUARD, ACAD_GUARD, REVIT_CODE_READ, bash("snapshot-taker"))) + f"""You are snapshot-taker. You run first in every run, before any write. Load the `revit-conventions` skill
 before any Revit call and the `acad-conventions` skill before any AutoCAD call.
 
-The orchestrator gives you the run id (YYYYMMDD-HHMM). Only snapshot the apps {POINTER} lists (a guard blocks
+The orchestrator gives you the run id (YYYYMMDD-HHMM). A snapshot belongs to ONE session (LESSONS O30): if
+{SNAP}/<run-id>.snapshot.json already exists from an earlier day, or Revit was reopened or crashed since it was
+taken, say "stale run id: start a new one" instead of reusing it. Only snapshot the apps {POINTER} lists (a guard blocks
 the others; write that app's section as null with "not used by this project").
 
 For the open Revit model and the open DWG:
@@ -96,6 +98,9 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
      Export replies lag by one call and sometimes repeat a path (24-071, R44; even with one agent on the bridge):
      never trust the reply. After each export, Glob the folder, and before using a PDF confirm its sheet number text
      is on the page (visual_crop --find "<sheet no>"). Pass sheet ids, not view ids (a view id exports a bare view).
+     The sheet number(s) to plot come from task.json "change" ("sheets: ..."; LESSONS Q27). If only a view is named,
+     find the sheet that hosts it (Viewport.SheetId via the orchestrator's scout) or ask; a bare-view export is
+     "unavailable", not a FAIL.
      If a folder is still empty after the next call, re-export that one sheet once.
    - Full-set check (orchestrator asks at the end of a run, 24-071): export every sheet of the issued set, one folder
      per sheet, confirm each sheet number, and report per sheet: background present, unexpected items (grids,
@@ -124,6 +129,10 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
    Check the crop is the layout, not a bare model-space plot (no title block = the plot ran with a floating
    viewport active; report "replot in paper space"). AutoCAD PDFs are often stored rotated 270: render with the
    page rotation applied before judging.
+   Overall plans (LESSONS Q10/Q27; Jeremy: tags from the enlarged sheets): fixture-tag / DFU overlaps on an overall
+   plan are a note in "reason", not a FAIL; judge tag placement on the enlarged sheets.
+   Schedules made in this run: read cell text and row counts from the PDF; expected.json items the verifier left
+   null "check on the sheet PDF" are yours to PASS/FAIL (R55).
 4. Write {MAN}/<task-id>.visual.json: {{"run_id","task_id","status":"PASS|FAIL|unavailable","reason":"plain
    language","crops":[paths],"export":"<pdf path>"}}.
 If no export tool works (or an AutoCAD task has no PDF), write status "unavailable" for every such task and say so
@@ -193,8 +202,21 @@ Mansfield patterns first (2026-11-09): a case collision between a function and a
 (ne/nE, lsp_collide "local-collisions", A28/A42); entget data passed as an ename (lint W7, A43); (setq v (or ...))
 returning T (W6, A31); a preflight that compares against the PLANNED value of an edit state (A44: reproduce with
 `lsp_dryrun.py <file> <TASK> --from-live "<dwg>"`); a c: command with no returned result (W5, A36). For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
-misspelled member is the most common cause. The checker script is not in your Bash allowlist, so use Grep on
-revit-api/references/ as its SKILL.md describes, and list every member you checked in debug.json.
+misspelled member is the most common cause. Try the checker yourself (LESSONS R58):
+`python {SKILLS_DIR}/revit-api/scripts/revit_api_check.py Type.Member [Type.Member ...]`. If your Bash guard blocks
+it, Grep revit-api/references/ as its SKILL.md describes, and list every member in debug.json under
+"members_to_check" so the orchestrator runs the checker before the next writer call. Put "api_checked" in
+debug.json only from the checker's FOUND / NOT FOUND output; a member you only grepped is "not checked". The checker does not test accessibility: also confirm
+every Autodesk.Revit.DB.Plumbing / .Mechanical / .Electrical type, enums included, is fully qualified (R56).
+P71 causes to check first (2026-11-12, R47-R50): a dry run that rolled back before Commit (commit-time failures
+never ran: make it commit inside a rolled-back TransactionGroup with a FailuresProcessing lambda); "angle too small
+or too large" / "Line is too short" / "opposite direction" (pipe branch rules: start from
+{SWARM}/library/revit/pipe-branch-to-main.cs); a self-check that rolled back on soft lengths (hard faults only);
+a CopyElement that kept the source level.
+Cycle cap (R28/R57): you get cycles 1 and 2 only, and a dry-run-driven design iteration counts as a cycle. At the end
+of cycle 2, if the cause is geometry/design rather than an API fact, say "stop: ask Jeremy or change the approach"
+with the simpler option you see (fewer legs, a manual list). Every cycle writes a debug.json with the run id the
+orchestrator gave you; if none was given, ask for it ("run_id": "unknown" is not allowed).
 
 When a writer reports failure, the orchestrator gives you the task id, run id and debug cycle (1 or 2). Read:
 {MAN}/<task-id>.write.json and <task-id>.write.log.md, the failing script ({SCRIPTS}/<task-id>[.v<n>].cs|.lsp),

@@ -126,3 +126,42 @@ Plotting
   disk and confirm the sheet number text is on the page. For deliverable sets use Document.Export(folder, sheetIds,
   PDFExportOptions{ColorDepth = GrayScale, PaperFormat = ExportPaperFormat.Default (sheet size), Combine = true,
   FileName, Hide* = true}) (scripts/P71-PDF-T1.cs) and add bookmarks with tools/bookmark_set.py (R44).
+
+## Pacific Edge 24-071 P71 lessons (2026-11-10 afternoon; swarm/LESSONS.md R47-R58, Q27; retro/20261110-p71.md)
+Dry runs
+- A dry run must reach Commit. transactionMode "none": TransactionGroup.Start(); Transaction.Start(); ...;
+  t.Commit(); group.RollBack(). Capture commit-time failures with a lambda on
+  document.Application.FailuresProcessing (record GetSeverity, GetDescriptionText, GetFailingElementIds; on errors
+  SetProcessingResult(ProceedWithRollBack)); remove the handler in finally. No class is needed. Return
+  "commit: Committed|RolledBack failureTotal=<n>" and the failure list in BOTH dry run and real run. A pre-Commit
+  dry run passed P71-SAN-T1 v2; the real Commit then failed ("Line is too short", "opposite direction") and Revit
+  crashed (R47).
+- Stage irreversible deletes/moves (stage A) apart from new geometry (stage B); each stage is idempotent and gets
+  its own dry run (parameters ["dryrun","A"|"B"|"AB"]).
+- Self-checks before Commit roll back only on hard faults (< 0.1 ft, flipped direction, no fall); "preferred"
+  lengths are info. Always build the full report, then roll back (R49).
+- Report every property expected.json checks per element (level, workset, symbol, host, Z) and name every
+  cascade-deleted id (Document.Delete return) by category + type before the rollback (R50).
+- Cosmetic calls are non-fatal: FormatOptions.IsValidAccuracy / UnitUtils.IsValidForSpec first; plain counts use
+  UnitTypeId.Fixed (General with Accuracy 1.0 threw and rolled back the whole schedule build, P71-SIDX-T1) (R54).
+Piping (extends R20)
+- Branch to a sloped main: level stub, perpendicular tee, or a tee family + PlumbingUtils.BreakCurve + ConnectTo.
+  Never NewTeeFitting / NewTakeoffFitting from a sloped or vertical pipe ("angle too small or too large"; takeoff:
+  "No routing preference for takeoff set for this PipeType"); never tee a vertical into a horizontal header.
+- Spacing: >= 2.0 ft between tees, >= 1.5 ft horizontal runs, >= 0.5 ft drops, no X jog shorter than 2x the fitting
+  take-off, a diagonal is one straight run. Budget the fall first (1/4 in/ft from the tie up); a leg with no fall is
+  reported, not drawn. Pattern: swarm/library/revit/pipe-branch-to-main.cs (from P71-SAN-T1.v6.cs, written clean:
+  35 pipes, 26 fittings, 0 failures) (R48).
+Elements and ids
+- CopyElement keeps the SOURCE element's level/host (a WC copied on BEACH LEVEL landed on PARKING - LEVEL B2): set
+  FAMILY_LEVEL_PARAM and restore Z with INSTANCE_ELEVATION_PARAM (scripts/P71-SAN-T2.cs) (R50).
+- Return all ids the commit created (before/after id sets over the categories touched), incl. Revit-spawned
+  fittings; never "id > N": other users edit the model at the same time (R51).
+- Warnings are not counted in the script (before regeneration: 476 -> 476 in-script, 476 -> 505 real). The writer
+  calls get_warnings before and after (R52).
+- Fully qualify EVERY type in Autodesk.Revit.DB.Plumbing / .Mechanical / .Electrical, enums too:
+  Autodesk.Revit.DB.Plumbing.PipeSystemType.Sanitary ("'PipeSystemType' is inaccessible due to its protection
+  level"). revit_api_check.py does not test this (R56).
+Schedules
+- A schedule made in the same session reads blank from TableSectionData.GetCellText until regenerated: check cell
+  text and row counts on the sheet PDF (visual-verifier), not via the API (R55).

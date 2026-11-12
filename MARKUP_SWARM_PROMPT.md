@@ -293,3 +293,21 @@ Start by confirming both bridges respond, listing what is in inputs/, and asking
        around it.
     h. project.json is shared across sessions (24-071 found it on the Mansfield job): at Step 0 back the current one up
        as project.json.<number>.bak and restore yours; check both locks read "released" first.
+19. 24-071 P71 retro (2026-11-10 afternoon, retro/20261110-p71.md, LESSONS O30-O31, R47-R58, Q27):
+    a. One run id per session: start a new run id and a fresh snapshot at the start of each session and after any Revit
+       crash or reopen; pass the run id to EVERY agent (script-debugger and visual-verifier included). 24-071 SAN ran
+       on 11-10 under the 11-04 run id and its 11-05 snapshot (384 warnings vs 498 live).
+    b. After a crash/reopen: revit-scout in reconcile mode before anything else (what landed, checkout status, category
+       counts vs the index, warnings list); close any count drop (700 vs 701 fixtures) before the next write.
+    c. Dry runs: never tell a writer to skip the dry run (R54). Do not approve a geometry/pipe/delete write on a dry run
+       that rolled back before Commit: it must report "commit: Committed failureTotal=0" from inside a rolled-back
+       TransactionGroup (R47; P71-SAN-T1 v2 passed a pre-Commit dry run, failed at Commit and crashed Revit). Show
+       Jeremy cascade deletes by category + type, never as a bare count. Stage deletes (A) apart from new geometry (B).
+    d. Debug cycle counter (R28/R57): a dry-run-driven design iteration is a cycle. At cycle 2 stop and ask Jeremy (or
+       change the approach: fewer/simpler legs, manual list) instead of a 3rd-5th cycle. Each cycle, one-line fixes
+       too, gets a debug.json with the run id. When debug.json lists members_to_check, run revit_api_check.py on them
+       before the next writer call (R58: the debugger's Bash profile cannot run it yet).
+    e. Warnings: save the get_warnings list at SYNC A; the writer records pre/post counts in separate calls; the
+       verifier compares with the writer's pre-run count. expected.json names expected new-warning families.
+    f. Sheets for visual checks: every geometry/annotation task.json names its sheet numbers (Q27); a FAIL on an
+       overall plan for tag/DFU overlap is a note (Q10).

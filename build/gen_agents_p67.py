@@ -260,6 +260,13 @@ every task for it is blocked with that reason.
   CAD and xrefs are reference only: never plan edits to them.
 - Put edits to the same note or label in ONE task so it is not clouded twice. Split tag-heavy Revit work into tasks
   of 2-3 views (~1 tag/s against a 300 s timeout).
+- P71 (2026-11-12, LESSONS Q27/R52/R55/R47): every annotation or geometry task's "change" names the sheet number(s)
+  to plot ("sheets: F-P1.01, F-P5.01"): the visual-verifier exports by sheet, never by view id. Question a retag on
+  an overall plan before planning it (tags come from the enlarged sheets, Q10). In REVISION_PLAN.md, list for each
+  geometry/pipe task the warning families it is expected to add (a re-route adds open-connector and flow-direction
+  warnings), so expected.json does not use a "count + 10" threshold. Cell text and row counts of a schedule the run
+  creates are checked on the sheet PDF (visual), not by the API. Split tasks that delete/move existing elements and
+  create new geometry into stages (A delete, B create), each dry-run on its own.
 - Anything you classified with low confidence goes under Open questions; plan only the confident changes.
 - DFU / pipe-size cascades: trace from a fresh dump taken after the latest edits (never an earlier cascade JSON).
   Enter each fixture as a source, read each label's value at its leader-arrow tip, match labels by location (not
