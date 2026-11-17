@@ -165,3 +165,50 @@ Elements and ids
 Schedules
 - A schedule made in the same session reads blank from TableSectionData.GetCellText until regenerated: check cell
   text and row counts on the sheet PDF (visual-verifier), not via the API (R55).
+
+## 23-073 Blocks 6&7, 25-076, 26036 CFA, 25-061 WF lessons (2026-11-09..16; swarm/LESSONS.md R59-R85, O34, O37)
+Returns, size, dry runs
+- The bridge truncates returns at ~3 KB: `done=/skipped=/failed=` and cleanup_params first, capped detail after; <= 2.3 KB
+  on every path (R59). Writers retype nothing: they send the file verbatim, so keep scripts <= ~450 lines / ~12k
+  tokens with a line-1 marker "// <task-id> v<n>"; split above that (R70/R72). One long script per writer (R62).
+- SAFETY (R77): a commit-then-rollback dry run PERSISTED view edits (rename, crop, HideElements, viewport
+  SetBoxCenter, detail curves; CFA T16a v3); pipes rolled back fine. Check grp.Start()/grp.RollBack() statuses, re-read
+  the model after RollBack, return ROLLBACK_FAILED on leftovers. View/sheet/annotation dry runs are read-only.
+  Viewport crop/scale/SetBoxCenter can move LabelOffset: restore it.
+- Simulate a risky step inside a rolled-back SubTransaction in the dry run; T9a dry runs said GO, real runs failed (R73).
+Parameters and names
+- Parameter.Set(string) on a generic-annotation 'Note Text' reads back the OLD value until document.Regenerate()
+  (CB6-R1-T3 v3 rolled back a good edit). Compare after Regenerate; report Set()==false separately (R63).
+- Formula-driven family values (GI 'Holding Capacity') are read-only: change the driving dimension (R68).
+- Names exactly: built-in line styles '<Thin Lines>'; LookupParameter is case-sensitive (LENGTH/WIDTH/HEIGHT) (R71).
+- Revision tag in IMEG-based models: family 'MEP_Tag_Revision', type 'Revision Tag' (R64).
+  RevisionNumberingSequenceId cannot be set to InvalidElementId (throws): skip it (R66).
+Annotation placement
+- Clash-check against MEP element boxes (pipes: centre line + radius; fittings, accessories, equipment), not only
+  text/tags; size clouds from boxes measured after Regenerate; cloud the text only, never the equipment it points to
+  (R67). TextNote.get_BoundingBox(view) spans its leader: box leadered notes from Coord/Width/Height/alignment and
+  test the leader as segments (R69).
+- Model/view point -> sheet = vp.GetBoxCenter() + ((P - cropCentre) . view.Right, (P - cropCentre) . view.Up) /
+  view.Scale. GetProjectionToSheetTransform on model points gave ~(147, 209) ft twice (WF-R1-T1 v1, v2). Assert the
+  point is inside vp.GetBoxOutline(). Helper: swarm/library/revit/model-to-sheet.cs (R82).
+- Viewport.GetLabelOutline can be far off (off-sheet Y) right after a scale/crop change, even after Regenerate (R76).
+- Clouds on schedule rows: inset by the arc sagitta; tags clear of in-viewport text, tags and title-block borders (R84).
+- FilledRegion.Create is not allowed on a ViewSheet: opaque-background TextNoteType or a scale-1 drafting view (R61).
+Pipes, systems, families
+- SetSystemType on a pipe connected to another system retypes the WHOLE network (25-076: building drain -> VENT, 0 FU).
+  Disconnect, retype the isolated pipes, reconnect, verify both systems (R60). Per-pipe RBS_PIPING_SYSTEM_TYPE_PARAM
+  Set returns true and reverts after Regenerate: divide the PipingSystem, retype the system element (R73).
+- Deleting a pipe/fitting cascades to its centerline sub-element: class Element, OST_PipeCurvesCenterLine (-2008045) /
+  OST_PipeFittingCenterLine (-2008072), not OST_CenterLines; allow exactly these in cascade guards (R75).
+- Leg length between fittings = routing-preference take-offs + 0.5 ft (rolled-back probe), never planned C-C (R81).
+- Wye-only pipe type: vent off a horizontal drain = 45deg wye rolled up + 1/8 bend (R79); off a sloped 3 in main no
+  tee variant works: riser unconnected, tie manual; never move the main (R80).
+- Work-plane-based floor drains: NewReferencePlane + GetReference (a SketchPlane reference fails "on face"; a level
+  plane can't be moved off the level); P-traps placed by point lie flat: no trap families (R78).
+- Hosted families ignore MoveElement in Z: use INSTANCE_FREE_HOST_OFFSET_PARAM / Elevation from Level, find the sign
+  live, check connector Z after Regenerate (R74).
+Scouting and bridge
+- A scout "not found" lists its exact search; schedules: Header, Body and Footer sections; text: every TextNote on every
+  sheet and every view on the named sheets (R83). An index from another document is not evidence (O34).
+- The bridge picked a stale mcp-port.txt (2026 file, 8081) over the live Revit 2024 (8080): confirm Document.Title and
+  version on the first call (O37).

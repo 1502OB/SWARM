@@ -40,12 +40,39 @@ def _parts(p):
     return None, [x for x in s.split("/") if x]
 
 
-def path_re(base, rel=""):
-    """Regex (no anchors, no groups that capture) for base/rel in C:/..., C:\\... or /c/... form."""
+def _home_aliases():
+    """Other names of the home folder: junctions/symlinks next to it that point at it (LESSONS O33, 2026-11-17:
+    C:/Users/Jeremy -> C:/Users/j on Jeremy's second PC). Agents may type either form; both are the same files."""
+    out = []
+    try:
+        real = os.path.normcase(os.path.realpath(HOME))
+        for d in HOME.parent.iterdir():
+            if d.name.lower() != HOME.name.lower() and os.path.normcase(os.path.realpath(d)) == real:
+                out.append(Path(os.path.abspath(d)))
+    except OSError:
+        pass
+    return out
+
+
+HOME_ALIASES = _home_aliases()
+
+
+def _one_re(base, rel):
     drive, parts = _parts(base)
     parts += [x for x in fwd(rel).split("/") if x]
     head = rf"(?:{re.escape(drive)}:|/{re.escape(drive)})" if drive else ""
     return head + "".join(SEP + re.escape(x) for x in parts)
+
+
+def path_re(base, rel=""):
+    """Regex (no anchors, no groups that capture) for base/rel in C:/..., C:\\... or /c/... form. A base under the
+    home folder also matches the same path under any junction alias of home (HOME_ALIASES)."""
+    b, h = fwd(base), fwd(HOME)
+    if not HOME_ALIASES or not (b.lower() == h.lower() or b.lower().startswith(h.lower() + "/")):
+        return _one_re(base, rel)
+    tail = b[len(h):]
+    alts = [_one_re(base, rel)] + [_one_re(fwd(a) + tail, rel) for a in HOME_ALIASES]
+    return "(?:" + "|".join(alts) + ")"
 
 
 def norm(p):
@@ -54,4 +81,10 @@ def norm(p):
     m = re.match(r"^/([A-Za-z])/(.*)$", s)
     if m:
         s = f"{m.group(1)}:/{m.group(2)}"
-    return fwd(os.path.normpath(s)).lower()
+    out = fwd(os.path.normpath(s)).lower()
+    h = fwd(HOME).lower()
+    for a in HOME_ALIASES:  # C:/Users/Jeremy/... compares equal to C:/Users/j/... (LESSONS O33)
+        al = fwd(a).lower()
+        if out == al or out.startswith(al + "/"):
+            return h + out[len(al):]
+    return out

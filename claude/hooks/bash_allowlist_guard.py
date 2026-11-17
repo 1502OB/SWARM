@@ -21,7 +21,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import CLAUDE, SWARM, path_re  # noqa: E402  (2026-11-09: no hard-coded user folder)
 
-ARG = r'("[^"$`;&|<>\r\n]*"|[^\s"$`;&|<>]+)'
+# A double-quoted argument may contain '&' (literal inside "..." in bash): Egnyte folder names like "Blocks_6&7"
+# (LESSONS O32, 2026-11-17). Unquoted '&', and $ ` ; | < > anywhere, stay blocked.
+ARG = r'("[^"$`;|<>\r\n]*"|[^\s"$`;&|<>]+)'
 # claude.ai-synced skills live under skills/synced/<account id>_<skill id>/ (ids differ per user)
 PCR = (path_re(CLAUDE, "skills/synced") + r"[/\\][0-9a-f-]+_[0-9a-f-]+[/\\]"
        + path_re("", "plan-check-response-letter/scripts/build_letter.py"))
@@ -39,7 +41,7 @@ def script(path, sub=""):
 API_CHECK = path_re(CLAUDE, "skills/autocad-api/scripts/acad_api_check.py")
 # 2026-11-09 (plan 2.4, LESSONS A40/A48): scripter + script-debugger check their own .lsp (api checker, collisions);
 # acad-writer writes publish DSDs and merges attempt logs; acad-ops merges attempt logs. Multi-sheet publish takes
-# --sheets-file <list.txt> so DWG paths with "&" never appear on the command line.
+# --sheets-file <list.txt> (or quote the path: "&" is allowed inside double quotes since 2026-11-17, LESSONS O32).
 LSP_CHECKS = [script(API_CHECK), script(sw("tools/lsp_collide.py"))]
 # 2026-11-11: offline compile + contract lint of Revit C# (plugin's Roslyn, RevitAPI 2025; no Revit needed).
 CS_CHECK = script(sw("tools/revit_cs_check.py"))
@@ -114,7 +116,7 @@ def main():
                     "acad_api_check.py --lsp <file.lsp> [--with <lib.lsp>], python .../swarm/tools/revit_cs_check.py "
                     "<script.cs> [--json <out>], or python .../swarm/validate.py <schema> <file>",
         "acad-writer": "python .../swarm/validate.py <schema> <file>, python .../swarm/tools/acad_dsd.py <args> "
-                       "(several sheets: --sheets-file <list.txt>, so no \"&\" path is on the command line), or "
+                       "(several sheets: --sheets-file <list.txt>; quote any path with \"&\"), or "
                        "python .../swarm/tools/merge_ops.py <args>",
         "acad-ops": "python .../swarm/tools/merge_ops.py <args>",
         "script-checker": "python .../swarm/tools/revit_cs_check.py <script.cs> [--json <out.json>] [--quiet], or "

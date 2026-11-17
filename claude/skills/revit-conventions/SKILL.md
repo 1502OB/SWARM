@@ -31,6 +31,9 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
   return size, Pad 11, Garden and Pacific Edge 24-071 lessons: elevation basis, ownership dialogs, templates, link
   display, schedule filters, shared parameters, grayscale PDF export). New Revit lessons go there.
 - Check every API member in the `revit-api` skill.
+- An index (cache/revit-index.json) from another document is not evidence; rebuild it (LESSONS O34).
+- Keep a script under ~450 lines with its return tail-first and <= 2.3 KB (R59/R72); view/sheet/annotation dry runs
+  are read-only, and commit-then-rollback dry runs re-read the model after RollBack (R77).
 
 ## Revision clouds via the API
 - Draw the boundary loop **CLOCKWISE**: bottom-left → top-left → top-right → bottom-right → back to bottom-left.
@@ -52,7 +55,10 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
 - Delta tag (Jeremy standard, Pad 11 2026-11-02): every cloud gets one tag of family "Revision Tag", head at
   (cloud right edge - 0.17", cloud top + 0.08") on the sheet, so its bottom touches the cloud's top line from
   outside. Not centred over the cloud.
-- A cloud and its tag must not touch or overlap another cloud, and must not cut a text line or tag. Grow the
+- A cloud and its tag must not touch or overlap another cloud, and must not cut a text line or tag. A cloud on a schedule row is
+  inset by the arc sagitta so its arcs stay inside the row band; the tag is also tested against in-viewport text,
+  existing tags and the sheet/title-block border lines (R84). Map model/view points to the sheet with
+  swarm/library/revit/model-to-sheet.cs, never GetProjectionToSheetTransform (R82). Grow the
   cloud to enclose the text, or merge touching clouds into one rectilinear outline cloud with one delta.
   Cloud only the changed items.
 - Rotated views: rotate a plan view by rotating its crop region element (setting View.CropBox with a rotated
@@ -75,3 +81,6 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
 - Every write batch runs inside one transaction group and rolls back entirely on any failure.
 - Never run a write without a snapshot for the current run id.
 - A revision cloud task is not complete until the revision is in the sheet's revision schedule and the cloud is tagged.
+- Before the first Revit call of a run, confirm the bridge is on the intended document (Document.Title + Revit
+  version vs project.json); on a mismatch check every Addins/<year>/revit_mcp_plugin/mcp-port.txt for a stale port
+  (LESSONS O37).

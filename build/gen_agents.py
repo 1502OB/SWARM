@@ -362,6 +362,16 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
   or extra), and the warnings list. Earlier digests are stale; say which facts changed.
 - Find a run's elements by the created-id lists in the write log, never by "id > N" (R51); report ids that appear
   in neither the list nor the baseline as "not ours (Jeremy?)" with their creator (GetWorksharingTooltipInfo).
+- First call of a run (LESSONS O37): return Document.Title, PathName and Application.VersionNumber so the orchestrator
+  can confirm the bridge is on the intended model. If cache/revit-index.json belongs to another document (title or
+  job number differs from project.json), rebuild it; never report it "invalidated" and carry on (O34).
+- Baseline every id a task will touch (O34): category, type, owner, and each value expected.json will check; that
+  per-task baseline confirms ids a partial index cannot.
+- "Not found" (R83) is a result only with the search listed: keywords, element classes, schedule sections (Header,
+  Body AND Footer), sheets/views scanned, whitespace/case-normalised matching per keyword. Scan every TextNote on every
+  sheet and every view on the named sheets before saying text "lives in the DWG/PDF" (WF-GEN reported 0 of 4).
+- Report names exactly as the model has them (R64/R71): parameter names (case), line styles with brackets
+  ('<Thin Lines>'), the revision tag family AND type name.
 
 {harden_scout("revit")}
 {COMMON}
@@ -469,6 +479,46 @@ Read those; do not look for a scout manifest that was not listed.
      - Fully qualify every type from Autodesk.Revit.DB.Plumbing / .Mechanical / .Electrical, enums too
        (Autodesk.Revit.DB.Plumbing.PipeSystemType.Sanitary): short names fail "inaccessible due to its protection
        level" and revit_api_check does not catch it.
+     2026-11-17 rules (LESSONS R59-R85: 23-073 Blocks 6&7, 25-076, 26036 CFA, 25-061 WF; details in scripting-lessons):
+     - Return tail-first and small (R59): first line `done=<n> skipped=<n> failed=<n>`, then cleanup_params, then a
+       capped detail body; the whole return <= 2.3 KB on EVERY path (GO, NO_GO, ROLLED_BACK): the bridge cuts at ~3 KB.
+     - Size budget (R62/R70/R72): the writer sends the whole .cs verbatim; keep a script <= ~450 lines / ~12k tokens
+       (chars/4), state the estimate in your reply, and split larger work into staged tasks. Line 1 is a version
+       marker comment "// <task-id> v<n>" so the writer can prove it sent the file it read.
+     - Dry run safety (R77): an R47 commit-then-rollback dry run checks the grp.Start()/grp.RollBack() statuses and
+       re-reads the model after RollBack (created ids gone, changed values back), else returns ROLLBACK_FAILED. Scripts
+       that edit view/sheet/annotation state (rename, crop, HideElements, viewport SetBoxCenter, detail curves, text)
+       use a READ-ONLY dry run (no setters), never commit-then-rollback (CFA T16a's rollback persisted). Restore
+       Viewport.LabelOffset after crop/scale/SetBoxCenter. Simulate a risky step (system split/retype) in the dry run
+       inside a rolled-back SubTransaction (R73).
+     - Parameters (R63/R68/R71): compare a Set(string) only after document.Regenerate(), and report Set()==false apart
+       from a read-back mismatch; formula-driven values are read-only (change the driving parameter, with Jeremy's OK);
+       parameter and line-style names come from the scout, exactly ('<Thin Lines>'; LENGTH is not Length).
+     - Revisions (R64/R66): the revision tag family can be 'MEP_Tag_Revision' with type 'Revision Tag': match either.
+       Never set RevisionNumberingSequenceId to InvalidElementId (it throws); leave the default sequence.
+     - Placement (R67/R69/R76/R82/R84): clash-check annotations against MEP element boxes (pipes by centre line +
+       radius, fittings, accessories, equipment) AND in-viewport text, tags and the sheet/title-block border lines.
+       Box a leadered TextNote from Coord/Width/Height/alignment (get_BoundingBox spans the leader). Size clouds from
+       boxes measured after Regenerate; cloud the text only; a cloud on a schedule row is inset by the arc sagitta so
+       its arcs stay inside the row band. Map model/view points to the sheet with {LIBRARY}/revit/model-to-sheet.cs
+       (box centre + delta / scale), never Viewport.GetProjectionToSheetTransform on model points; assert the point is
+       inside the viewport outline and report the mapping in the dry run. GetLabelOutline can be far off right after a
+       scale/crop change: check it against the viewport box.
+     - Sheets (R61): no FilledRegion on a ViewSheet; mask with an opaque-background TextNoteType or a scale-1 drafting
+       view, after checking whether the "raster" text is live and editable in place.
+     - Pipes and systems (R60/R73/R75/R78-R81): never SetSystemType on a pipe connected to another system's network
+       (it retypes the whole network): disconnect, retype the isolated pipes, reconnect, report both systems' types. A
+       per-pipe system type reverts after Regenerate: divide the PipingSystem, check it holds only the intended
+       elements, retype the system element. Pipe/fitting deletes cascade to centerline sub-elements
+       (OST_PipeCurvesCenterLine -2008045 / OST_PipeFittingCenterLine -2008072): allow exactly those in cascade
+       guards. Leg length = family take-offs + 0.5 ft (probe in a rolled-back transaction), never a planned
+       centre-to-centre. Wye-only pipe types: a vent off a horizontal drain = 45deg wye rolled up + 1/8 bend; off a
+       sloped main no tee variant works: draw the riser unconnected and report the tie as manual; never move the main.
+       Work-plane-based floor drains go on a ReferencePlane (NewReferencePlane + GetReference); no P-trap families.
+     - Hosted families (R74): Z changes go through the offset parameter (INSTANCE_FREE_HOST_OFFSET_PARAM / Elevation
+       from Level), not MoveElement; find the sign live and check connector Z after Regenerate.
+     - expected.json (R85): pre-existing counts come from the scout baseline (clouds per sheet over all revisions);
+       every fallback position/value the script can take lies inside the matching expected item.
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
    - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
@@ -660,6 +710,14 @@ Load the `revit-conventions` skill first.
   values. List cascade deletes by category + type; unnamed cascade ids are NO_GO until the scout names them.
 - Refuse a run whose snapshot is older than the last Revit reopen or crash the orchestrator told you about
   (report "stale snapshot (O30)").
+- Long scripts (2026-11-17, LESSONS R62/R70/R72): Read the file right before sending and send it verbatim; never
+  retype or reconstruct it from memory. Its line-1 marker ("// <task-id> v<n>") must match the version the
+  orchestrator named. A script you cannot send verbatim is NOT_RUN "too long to send verbatim"; never trim it.
+- Dry-run safety (R77): a view/sheet/annotation script's dry run makes no change. A commit-then-rollback dry run must
+  report the RollBack status and a post-rollback re-read; "ROLLBACK_FAILED" or no re-read = stop, write status
+  "failed" with error "ROLLBACK:", and run nothing else (the orchestrator sends a reconcile scout).
+- Cascade deletes (R75): pipe/fitting centerline sub-elements (OST_PipeCurvesCenterLine / OST_PipeFittingCenterLine)
+  dependent on a target are expected; any other unnamed cascade id is NO_GO.
 - {REVIT_SERIAL}
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", REVIT_SAVE_RULE)}
@@ -842,6 +900,9 @@ anything in AutoCAD.
   (right - 0.17 in, top + 0.08 in) paper (tolerance 0.02 in), and that the cloud and tag box touch no other cloud.
   View rotation: check View.RightDirection, not the crop box.
 - Text found by search: match by handle/location, not by short strings ("4DFU" also occurs in fixture tags).
+- Pipe system types (LESSONS R60/R73): after any retype, check the system type of the NEIGHBOURING connected pipes
+  and the main as well as the retyped ones (25-076: one SetSystemType turned the building drain into VENT, tags read
+  '4" V (0 FU)'). A per-pipe type that reverted is a FAIL.
 - AutoCAD new text/markup: existing in the database does not prove it prints (22-022: tags, an MTEXT calc and P012
   clouds all entget'ed fine and never plotted). Any item that says a new text, tag or cloud is shown is null
   ("unverifiable: needs plot") unless visual.json covers it; do not mark it pass from entget alone.

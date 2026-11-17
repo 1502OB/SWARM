@@ -166,8 +166,8 @@ run(BG, ["scripter"], "Bash", {"command": f'python {SW}/../evil/acad_api_check.p
 run(BG, ["acad-writer"], "Bash", {"command": f'python {SW}/tools/acad_dsd.py --sheets-file '
                                              f'{SW}/visual/20261109-1100/M18-PUB.sheets.txt "{SW}/visual/20261109-1100/set.pdf" '
                                              f'"{SW}/visual/20261109-1100/set.dsd"'}, ALLOW, "acad-writer: acad_dsd --sheets-file")
-run(BG, ["acad-writer"], "Bash", {"command": f'python {SW}/tools/acad_dsd.py "L:/Shared/x/A & B.dwg" P1 a.pdf a.dsd'}, BLOCK,
-    "acad-writer: a path with & on the command line (use --sheets-file)")
+run(BG, ["acad-writer"], "Bash", {"command": f'python {SW}/tools/acad_dsd.py "L:/Shared/x/A & B.dwg" P1 a.pdf a.dsd'}, ALLOW,
+    "acad-writer: a quoted path with & (LESSONS O32, 2026-11-17; --sheets-file still works)")
 run(BG, ["acad-writer"], "Bash", {"command": f'python {SW}/tools/merge_ops.py {SW}/2018-930Mansfield/manifests M18-R3-T15'},
     ALLOW, "acad-writer: merge_ops")
 run(BG, ["acad-writer"], "Bash", {"command": f'python {SW}/validate.py {SW}/schemas/write.schema.json x.json'}, ALLOW,
@@ -242,6 +242,24 @@ run(WG, ["script-checker"], "Write", {"file_path": f"{SW}/scripts/CB6-R1-T5.v3.c
 run(WG, ["script-checker"], "Edit", {"file_path": f"{SW}/scripts/CB6-R1-T5.lsp"}, BLOCK, "script-checker: Edit a .lsp")
 run(WG, ["script-checker"], "Write", {"file_path": f"{SW}/23-073_x/manifests/CB6-R1-T5.expected.json"}, BLOCK,
     "script-checker: Write the scripter's expected.json")
+
+# ---- 2026-11-17: '&' inside a quoted path (LESSONS O32) and home-folder junction aliases (LESSONS O33) ----
+VC = f"{SW}/tools/visual_crop.py"
+run(BG, ["visual-verifier"], "Bash", {"command": f'python {VC} "{SW}/23-073_Blocks_6&7/out/P1.pdf" 1 0,0,1,1 T3'},
+    ALLOW, "visual-verifier: quoted path with '&'")
+run(BG, ["visual-verifier"], "Bash", {"command": f'python {VC} {SW}/23-073_Blocks_6&7/out/P1.pdf 1 0,0,1,1 T3'},
+    BLOCK, "visual-verifier: unquoted '&' (background job)")
+run(BG, ["visual-verifier"], "Bash", {"command": f'python {VC} "a.pdf" 1 0,0,1,1 T3 & calc'}, BLOCK,
+    "visual-verifier: trailing '& calc'")
+from paths import HOME, HOME_ALIASES  # noqa: E402
+if HOME_ALIASES:
+    ALIAS_SW = SW.replace(fwd(HOME), fwd(HOME_ALIASES[0]), 1)
+    run(BG, ["visual-verifier"], "Bash", {"command": f'python {ALIAS_SW}/tools/visual_crop.py a.pdf 1 0,0,1,1 T3'},
+        ALLOW, "visual-verifier: swarm path through the home junction alias")
+    run(WG, ["script-checker"], "Write", {"file_path": f"{ALIAS_SW}/23-073_x/manifests/T.precheck.json", "content": "{}"},
+        ALLOW, "script-checker: Write precheck.json through the home junction alias")
+run(BG, ["visual-verifier"], "Bash", {"command": 'python C:/Users/Someone/swarm/tools/visual_crop.py a.pdf 1 0,0,1,1 T3'},
+    BLOCK, "visual-verifier: another user's swarm copy")
 
 failed = [r for r in results if not r[0]]
 for ok, guard, name, code, err in results:

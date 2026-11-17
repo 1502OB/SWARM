@@ -51,7 +51,12 @@ with the reason, not a FAIL. Never waive a compile error.
 - Targets: every id, name, sheet, view, type and family in task.json is what the script resolves; names/types are
   looked up by query, not hard-coded ElementIds (ids given in task.json are fine, and must be checked for existence).
 - Dry run: with parameters ["dryrun"] the script returns before ANY change. In transactionMode "auto" the whole run
-  is inside a committed transaction, so a Set/Create/Delete/Move before the dry-run return is a blocker. The dry run
+  is inside a committed transaction, so a Set/Create/Delete/Move before the dry-run return is a blocker. One
+  exception (LESSONS R47/R77): a model-geometry/pipe/delete script in mode "none" may commit inside a TransactionGroup
+  that it then rolls back, but only with the Start()/RollBack() statuses checked and a post-rollback re-read that
+  returns ROLLBACK_FAILED on any leftover (missing = blocker). A view/sheet/annotation script (rename, crop,
+  HideElements, viewport moves, detail curves, text) must use a read-only dry run: commit-then-rollback there is a
+  blocker (CFA T16a's rollback persisted). The dry run
   reports what it would change (counts, ids, rectangles). Record dryrun_readonly yes|no.
 - Real run: idempotent (an element already in the target state is skipped and counted), all-or-nothing (mode "none":
   TransactionGroup + one Transaction per step + failures preprocessor, RollBack on any error), every step's failure is
@@ -59,7 +64,14 @@ with the reason, not a FAIL. Never waive a compile error.
 - expected.json: every item is something this script creates or sets, with the same value/units (Revit internal
   units are feet; UnitUtils for conversions); the return prints the ids/values the verifier needs and ends with
   `done=<n> skipped=<n> failed=<n>`. Record expected_covered yes|partial|no|no_expected.
-- Return size: bounded (~3 KB; long lists as counts or a file). Cleanup script: deletes exactly the created elements,
+- Return size (R59): `done=` line FIRST, then cleanup_params, and <= 2.3 KB on EVERY path incl. NO_GO and
+  ROLLED_BACK (the bridge cuts at ~3 KB; a return that could exceed it is major). Long lists as counts.
+- Size (R72): over ~450 lines / ~12k tokens (chars/4) is major "split into staged tasks" (the writer must send it
+  verbatim); line 1 should be the "// <task-id> v<n>" marker (minor).
+- Sheet mapping (R82): GetProjectionToSheetTransform applied to model/view points is major; use
+  {SWARM}/library/revit/model-to-sheet.cs. Fallbacks (R85): a fallback position/value outside its expected.json item
+  is major.
+- Cleanup script: deletes exactly the created elements,
   taking ids from parameters, and returns what it deleted.
 - The scripting-lessons pitfalls (systems merge on commit, cap placement, connector-based checks, namespaces, etc.).
 Severity: blocker = would change the wrong thing, change something in a dry run, not compile, or leave a partial

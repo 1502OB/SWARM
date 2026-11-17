@@ -312,3 +312,19 @@ Start by confirming both bridges respond, listing what is in inputs/, and asking
        verifier compares with the writer's pre-run count. expected.json names expected new-warning families.
     f. Sheets for visual checks: every geometry/annotation task.json names its sheet numbers (Q27); a FAIL on an
        overall plan for tag/DFU overlap is a note (Q10).
+20. 23-073 / 25-076 / 26036 CFA / 25-061 WF lessons (2026-11-17, LESSONS O32-O38, R59-R85, J13-J15):
+    a. Bridge check first (O37): the first revit-scout call returns Document.Title + Revit version; compare with
+       project.json before any other Revit work. Wrong document or a hang: check every
+       %APPDATA%/Autodesk/Revit/Addins/<year>/revit_mcp_plugin/mcp-port.txt against the running Revit and rename the
+       stale ones (the plugin takes the highest year first). An index from another document is rebuilt (O34).
+    b. Sync after every verified batch (O35): SYNC B right after each verifier PASS batch, not at milestones.
+    c. Never chain a state-changing step after a command that can fail with ';' (O36): use && or separate calls.
+    d. One long script per writer (R62/R70/R72): each script over ~300 lines gets its own revit-writer; over ~450 lines
+       it goes back to the scripter to split. After a permission-mode change (auto mode on/off), spawn a fresh writer;
+       never resume one launched under the old mode (O38).
+    e. A dry run that reports ROLLBACK_FAILED, or a commit-then-rollback dry run without a post-rollback re-read, stops
+       the batch: send a reconcile scout before anything else (R77).
+    f. Paths (O32/O33, fixed in the hooks 2026-11-17): a quoted path with '&' passes the Bash guards, and the home
+       folder's junction alias (C:/Users/Jeremy -> C:/Users/j) is accepted; still quote every path.
+    g. J13-J15: run independent work in parallel; never offer a condensate pump; when the letter is FINAL tell
+       response-writer "FINAL": no 'pending' in the letter, open items in its claims_checklist.md.

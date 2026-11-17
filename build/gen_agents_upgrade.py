@@ -133,6 +133,10 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
    plan are a note in "reason", not a FAIL; judge tag placement on the enlarged sheets.
    Schedules made in this run: read cell text and row counts from the PDF; expected.json items the verifier left
    null "check on the sheet PDF" are yours to PASS/FAIL (R55).
+   Clouds, tags and notes (LESSONS R67/R84/R76, 2026-11-17): a cloud on a schedule row must keep its arcs inside the
+   row band (an arc through a neighbouring row's text is a FAIL); a delta tag must not touch existing text, other tags
+   or the sheet/title-block border lines; a note or label must not sit on a pipe. Judge viewport titles from the plot,
+   not from GetLabelOutline.
 4. Write {MAN}/<task-id>.visual.json: {{"run_id","task_id","status":"PASS|FAIL|unavailable","reason":"plain
    language","crops":[paths],"export":"<pdf path>"}}.
 If no export tool works (or an AutoCAD task has no PDF), write status "unavailable" for every such task and say so
@@ -215,6 +219,12 @@ never ran: make it commit inside a rolled-back TransactionGroup with a FailuresP
 or too large" / "Line is too short" / "opposite direction" (pipe branch rules: start from
 {SWARM}/library/revit/pipe-branch-to-main.cs); a self-check that rolled back on soft lengths (hard faults only);
 a CopyElement that kept the source level.
+2026-11-17 causes (LESSONS R59-R85): a return cut at ~3 KB (no done= line: make it tail-first, <= 2.3 KB, R59); a
+commit-then-rollback dry run that did not undo view/sheet edits (R77: make that dry run read-only); a Set(string)
+compared before Regenerate (R63); a per-pipe system type that reverted (R73: divide the system); a hosted family that
+ignored a Z move (R74: offset parameter); a cascade NO_GO on pipe centerline sub-elements (R75: allow those two
+categories); GetProjectionToSheetTransform on model points (R82: {SWARM}/library/revit/model-to-sheet.cs); names
+spelled from memory (R71). Keep the fixed script within the size budget (~450 lines, R72) and bump its line-1 marker.
 Cycle cap (R28/R57): you get cycles 1 and 2 only, and a dry-run-driven design iteration counts as a cycle. At the end
 of cycle 2, if the cause is geometry/design rather than an API fact, say "stop: ask Jeremy or change the approach"
 with the simpler option you see (fewer legs, a manual list). Every cycle writes a debug.json with the run id the

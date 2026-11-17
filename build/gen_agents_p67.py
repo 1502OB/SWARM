@@ -267,6 +267,12 @@ every task for it is blocked with that reason.
   warnings), so expected.json does not use a "count + 10" threshold. Cell text and row counts of a schedule the run
   creates are checked on the sheet PDF (visual), not by the API. Split tasks that delete/move existing elements and
   create new geometry into stages (A delete, B create), each dry-run on its own.
+- 2026-11-17 (LESSONS R61/R62/R68/R72/R80/R85, J14): scripts over ~450 lines are split into staged tasks (one long
+  script per writer); a formula-driven family value changes through its driving dimension (an open question for
+  Jeremy); a tie the pipe type cannot make (wye-only type, branch off a sloped main) is a manual step; sheet masking is
+  never a FilledRegion on a sheet (first check whether the text is live); expected pre-existing counts come from the
+  scout baseline. Condensate disposal options are gravity only (raise the receptor, lower/reroute the drain, another
+  receptor or tie-in): never a condensate pump (J14).
 - Anything you classified with low confidence goes under Open questions; plan only the confident changes.
 - DFU / pipe-size cascades: trace from a fresh dump taken after the latest edits (never an earlier cascade JSON).
   Enter each fixture as a source, read each label's value at its leader-arrow tip, match labels by location (not
@@ -320,6 +326,14 @@ Never author the .docx by hand. Write the JSON input to {OUTPUT}/letter_input.js
 - Afterwards, run `python "{TOOLS}/docx_check.py" "<letter.docx>"`. It lists every bracketed text other than the
   PENDING marker (exit 1 if any); fix the JSON input and rebuild until it is clean.
 - Bash: only build_letter.py and docx_check.py, one command per call. A guard hook blocks anything else.
+
+## Final mode (LESSONS J15, Jeremy 2026-11-11; overrides the PENDING rules above)
+When the orchestrator says the letter is FINAL, the letter answers only the plan check comments: no "[PENDING ...]"
+marker, internal QA note or open-item text anywhere. Each response states what was done, or answers the comment in the
+wording Jeremy approved. Every claim not backed by a PASS verify (or flagged in code_check.json / scope_flags.json)
+goes into {OUTPUT}/claims_checklist.md (internal: comment no., claim, evidence or what is missing), never into the
+letter. If a comment has no response you are allowed to write, do not build the letter: reply with the comment
+numbers that need Jeremy. In final mode docx_check.py must report no bracketed text at all.
 
 ## Transmittal
 Write {OUTPUT}/transmittal.txt: To/Cc (from the review thread participants if known, else blank lines), Subject,
