@@ -137,7 +137,7 @@ def main():
         return ops_main()
     if app == "acad-ops":
         return acad_ops_main()
-    if app in ("scripter", "script-debugger"):
+    if app in OWN_MANIFESTS:
         return script_files_main(app)
     if app not in ("revit", "acad"):
         block(f"unknown app '{app}'")
@@ -195,7 +195,10 @@ def main():
 OWN_MANIFESTS = {
     "scripter": ("expected",),
     "script-debugger": ("debug", "expected"),
+    # 2026-11-11: the offline Revit script gate writes its verdict only; it never touches a script.
+    "script-checker": ("precheck",),
 }
+READ_ONLY_SCRIPT_AGENTS = ("script-checker",)
 TASK_FILE = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 
 
@@ -209,6 +212,9 @@ def script_file_problem(agent, tool, path):
     manifest = re.compile(rf"^{re.escape(root)}/(?:[^/]+/)?manifests/{TASK_FILE}\.(?:{kinds})\.json$")
     if manifest.match(target):
         return None
+    if agent in READ_ONLY_SCRIPT_AGENTS:
+        return (f"{agent} may {tool} only its own manifests (<project>/manifests/<task-id>.precheck.json); it never "
+                "changes a script: report the fix in precheck.json for the scripter")
     if tool == "Edit":
         if re.match(rf"^{re.escape(root)}/scripts/{TASK_FILE}\.lsp$", target):
             return None

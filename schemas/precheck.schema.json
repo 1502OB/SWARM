@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "swarm offline script gate (<task-id>.precheck.json, written by script-checker before any Revit run)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "task_id", "status", "checked_at", "scripts", "findings", "dryrun_readonly", "expected_covered"],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "checked_at": {"type": "string", "minLength": 1},
+    "scripts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "compile", "lint_errors", "transaction_mode"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "compile": {"type": "string", "enum": ["PASS", "FAIL"]},
+          "compile_errors": {"type": "array"},
+          "lint_errors": {"type": "array"},
+          "warnings": {"type": "array"},
+          "transaction_mode": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "file", "line", "what", "fix"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["blocker", "major", "minor"]},
+          "file": {"type": "string"},
+          "line": {"type": "integer"},
+          "rule": {"type": "string"},
+          "what": {"type": "string", "minLength": 1},
+          "fix": {"type": "string"}
+        }
+      }
+    },
+    "dryrun_readonly": {"type": "string", "enum": ["yes", "no", "not_applicable"]},
+    "expected_covered": {"type": "string", "enum": ["yes", "partial", "no", "no_expected"]},
+    "notes": {"type": "string"}
+  }
+}

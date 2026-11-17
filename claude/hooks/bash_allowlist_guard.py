@@ -8,6 +8,7 @@ qaqc-checker:    swarm/tools/sheet_tool.py zoom.
 swarm-validate:  swarm/validate.py (writers, verifier). snapshot-taker: tools/snapshot_backup.py.
 visual-verifier: tools/visual_crop.py. script-debugger: tools/lspcheck.py, validate.py. filer: tools/file_deliverable.py.
 scripter + script-debugger (2026-11-09): also acad_api_check.py --lsp (autocad-api skill) and tools/lsp_collide.py.
+2026-11-11: tools/revit_cs_check.py (offline Revit C# compile) for scripter, script-debugger, script-checker, revit-writer.
 acad-writer: validate.py, tools/acad_dsd.py (--sheets-file for several sheets), tools/merge_ops.py. acad-ops: merge_ops.py.
 Paths are computed at runtime (hooks/paths.py: SWARM_HOME, CLAUDE_CONFIG_DIR, else under the user's home).
 One command per call: no chaining, pipes, redirects or substitution. Exit code 2 blocks the call.
@@ -40,6 +41,8 @@ API_CHECK = path_re(CLAUDE, "skills/autocad-api/scripts/acad_api_check.py")
 # acad-writer writes publish DSDs and merges attempt logs; acad-ops merges attempt logs. Multi-sheet publish takes
 # --sheets-file <list.txt> so DWG paths with "&" never appear on the command line.
 LSP_CHECKS = [script(API_CHECK), script(sw("tools/lsp_collide.py"))]
+# 2026-11-11: offline compile + contract lint of Revit C# (plugin's Roslyn, RevitAPI 2025; no Revit needed).
+CS_CHECK = script(sw("tools/revit_cs_check.py"))
 
 PROFILES = {
     "doc-scout": [
@@ -58,11 +61,14 @@ PROFILES = {
     "snapshot-taker": [script(sw("tools/snapshot_backup.py"))],
     "visual-verifier": [script(sw("tools/visual_crop.py"))],
     "script-debugger": [script(sw("tools/lspcheck.py")), script(sw("validate.py")),
-                        script(sw("tools/lsp_lint.py")), script(sw("tools/lsp_dryrun.py"))] + LSP_CHECKS,
+                        script(sw("tools/lsp_lint.py")), script(sw("tools/lsp_dryrun.py"))] + LSP_CHECKS + [CS_CHECK],
     "filer": [script(sw("tools/file_deliverable.py"))],
     # 2026-11-06: scripter checks its own AutoLISP before handing it back (lint + headless dry run on a drawing copy)
     "scripter": [script(sw("tools/lsp_lint.py")), script(sw("tools/lsp_dryrun.py")),
-                 script(sw("validate.py"))] + LSP_CHECKS,
+                 script(sw("validate.py"))] + LSP_CHECKS + [CS_CHECK],
+    # 2026-11-11: offline gate before any Revit run; revit-writer compiles the exact file right before its dry run
+    "script-checker": [CS_CHECK, script(sw("validate.py"))],
+    "revit-writer": [script(sw("validate.py")), CS_CHECK],
     # 2026-11-09: writers keep validate.py; acad-writer adds the DSD writer and the attempt-log merge
     "acad-writer": [script(sw("validate.py")), script(sw("tools/acad_dsd.py")), script(sw("tools/merge_ops.py"))],
     "acad-ops": [script(sw("tools/merge_ops.py"))],
@@ -100,15 +106,21 @@ def main():
         "visual-verifier": "python .../swarm/tools/visual_crop.py <pdf> <page> <x0,y0,x1,y1> <task-id> [--units in]",
         "script-debugger": "python .../swarm/tools/lspcheck.py | lsp_lint.py | lsp_collide.py <file.lsp>, lsp_dryrun.py "
                            "<lsp> <dwg> <TASK>, python .../.claude/skills/autocad-api/scripts/acad_api_check.py --lsp "
-                           "<file.lsp> [--with <lib.lsp>], or python .../swarm/validate.py <schema> <file>",
+                           "<file.lsp> [--with <lib.lsp>], python .../swarm/tools/revit_cs_check.py <script.cs>, or "
+                           "python .../swarm/validate.py <schema> <file>",
         "filer": "python .../swarm/tools/file_deliverable.py <source> <destination folder> <new name> <project>",
         "scripter": "python .../swarm/tools/lsp_lint.py | lsp_collide.py <file.lsp>, python .../swarm/tools/lsp_dryrun.py "
                     "<script.lsp> <drawing.dwg> <TASK> [--run], python .../.claude/skills/autocad-api/scripts/"
-                    "acad_api_check.py --lsp <file.lsp> [--with <lib.lsp>], or python .../swarm/validate.py <schema> <file>",
+                    "acad_api_check.py --lsp <file.lsp> [--with <lib.lsp>], python .../swarm/tools/revit_cs_check.py "
+                    "<script.cs> [--json <out>], or python .../swarm/validate.py <schema> <file>",
         "acad-writer": "python .../swarm/validate.py <schema> <file>, python .../swarm/tools/acad_dsd.py <args> "
                        "(several sheets: --sheets-file <list.txt>, so no \"&\" path is on the command line), or "
                        "python .../swarm/tools/merge_ops.py <args>",
         "acad-ops": "python .../swarm/tools/merge_ops.py <args>",
+        "script-checker": "python .../swarm/tools/revit_cs_check.py <script.cs> [--json <out.json>] [--quiet], or "
+                          "python .../swarm/validate.py <schema> <file>",
+        "revit-writer": "python .../swarm/validate.py <schema> <file>, or python .../swarm/tools/revit_cs_check.py "
+                        "<script.cs> [--quiet]",
     }.get(profile, "nothing (no help text for this profile)")
     block(f"{profile} may only run: {allowed}. One command per call, no chaining, pipes, redirects or $(). "
           "Read JSON with the Read tool.")

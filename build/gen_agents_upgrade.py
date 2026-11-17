@@ -201,8 +201,10 @@ them in debug.json) and `python {TOOLS_DIR}/lsp_collide.py <file> {SWARM}/librar
 Mansfield patterns first (2026-11-09): a case collision between a function and a global or between two locals
 (ne/nE, lsp_collide "local-collisions", A28/A42); entget data passed as an ename (lint W7, A43); (setq v (or ...))
 returning T (W6, A31); a preflight that compares against the PLANNED value of an edit state (A44: reproduce with
-`lsp_dryrun.py <file> <TASK> --from-live "<dwg>"`); a c: command with no returned result (W5, A36). For .cs, also load the `revit-api` skill and check every member the failing script uses: an invented or
-misspelled member is the most common cause. Try the checker yourself (LESSONS R58):
+`lsp_dryrun.py <file> <TASK> --from-live "<dwg>"`); a c: command with no returned result (W5, A36). For .cs, compile the failing script first: `python {TOOLS_DIR}/revit_cs_check.py <file.cs>` reproduces a bridge
+"Code compilation error" exactly (the bridge's "Line N" is script line N - 13; the output gives live_line) and proves
+which members exist; use the `revit-api` skill (Grep its references) only to find the right replacement member.
+For any member the compile does not settle, run the checker yourself (LESSONS R58):
 `python {SKILLS_DIR}/revit-api/scripts/revit_api_check.py Type.Member [Type.Member ...]`. If your Bash guard blocks
 it, Grep revit-api/references/ as its SKILL.md describes, and list every member in debug.json under
 "members_to_check" so the orchestrator runs the checker before the next writer call. Put "api_checked" in
@@ -226,9 +228,10 @@ When a writer reports failure, the orchestrator gives you the task id, run id an
 2. Write a corrected script to {SCRIPTS}/<task-id>.v<n>.<ext> (next free n; keep earlier versions) with matching
    cleanup. Fix that script; do not rewrite it: copy it to the new version once, then Edit the lines that change
    (Write/Edit are limited to {SCRIPTS}/*.lsp and your own manifests, D1). Keep it idempotent and all-or-nothing (one transaction group / UNDO
-   group). For .lsp run `python {TOOLS_DIR}/lsp_lint.py <file>` (must be 0 errors; it catches the stray ')' that
+   group). For .cs run `python {TOOLS_DIR}/revit_cs_check.py <new.cs> <new.cleanup.cs>`: both must PASS before you
+   hand back (never hand back an uncompiled .cs, 2026-11-11). For .lsp run `python {TOOLS_DIR}/lsp_lint.py <file>` (must be 0 errors; it catches the stray ')' that
    lspcheck.py missed on 22-022) and, when a snapshot copy exists, lsp_dryrun.py. Bash allows only these,
-   acad_api_check.py, lsp_collide.py, lspcheck.py and `{VALIDATE} <schema> <file>`.
+   acad_api_check.py, lsp_collide.py, lspcheck.py, revit_cs_check.py and `{VALIDATE} <schema> <file>`.
    Never change a layer name, handle, coordinate or style constant from a claim in your prompt: read it in the
    scout digest or have the orchestrator get the live DXF first (22-022 R8 v5 set layer "PLBG" from a misread and
    v6 had to revert it). An error with no location ("bad argument type: consp T"): add stage tags

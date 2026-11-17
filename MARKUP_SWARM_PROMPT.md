@@ -40,6 +40,7 @@ You are the orchestrator of a multi-agent "plan check" swarm for MEP (plumbing) 
    >>> HUMAN GATE: the user answers the open questions and resolves conflicts. Re-run the planner, then the user says "go". <<<
 5. revit-scout / acad-scout (haiku, read-only): take a compact baseline snapshot per task and save it to manifests/<task>.scout.json (counts, names, ids; never raw dumps).
 6. scripter (sonnet by default, no MCP access; opus for geometry-heavy scripts and for fix mode, LESSONS.md R21/R28): writes ONE batched script per task. For Revit that is scripts/<task>.cs, a C# body for send_code_to_revit that runs in a single auto transaction, looks things up by query and never hard-codes ElementIds. For AutoCAD it is scripts/<task>.lsp with (c:<TASK>-RUN) and (c:<TASK>-CLEAN). Each script gets a matching cleanup script and manifests/<task>.expected.json, which lists exact checkable post-state items.
+6b. script-checker (sonnet, no MCP; 2026-11-11): offline gate for every Revit .cs before its writer. It compiles the script and its cleanup exactly as the bridge does (tools/revit_cs_check.py: plugin's Roslyn + RevitAPI 2025, no Revit needed), lints the script contract, and reviews it against task.json/expected.json (target model, ids, read-only dry run, idempotence, rollback, return). It writes manifests/<task>.precheck.json. FAIL goes back to the scripter with the findings; never send a FAIL script to the writer. Run it in parallel with the next scripters and scouts (only the bridge is serial). revit-writer also compiles the exact file before its dry run and refuses a compile FAIL.
 7. revit-writer / acad-writer (sonnet): take the lock, re-query ids right before running, execute the whole batch in ONE call and log to manifests/<task>.write.json. On failure they record the error and stop, with no blind retries. They release the lock even after a failure. They never save the drawing or change the user's view or layout.
 8. verifier (sonnet, read-only; enforced by hooks): reads ONLY <task>.expected.json and re-queries the model. It has not seen the work. It writes manifests/<task>.verify.json with PASS/FAIL per item and overall_pass.
 8b. acad-ops (sonnet) / revit-ops (sonnet): file operations only, one instruction at a time. acad-ops opens DWGs listed in locks/acad_open_approved.txt (add the project's sheet folder, ending in "/", after the user approves it), switches the active drawing and saves in place after a verifier PASS; it refuses to save if project.json is another project's. Writers, scouts and the verifier cannot open drawings.
@@ -107,7 +108,7 @@ Step 3: revision-planner.
 Step 4: HUMAN GATE. Show the open questions only (other_discipline items are not questions). If
   project.json has no other_discipline_response, propose one standard sentence and ask the user to approve it,
   then save it to project.json.
-Step 5: for each task in plan order, run scout, then scripter, then writer, then verifier.
+Step 5: for each task in plan order, run scout, then scripter, then (Revit) script-checker, then writer, then verifier.
   Before each AutoCAD writer, run `python tools/lspcheck.py scripts/<task>.lsp` (exit 1 = unbalanced: send it back
   to scripter). After any pause or failure, re-check the bridge (`system status`) before scheduling the next
   AutoCAD agent; a hung bridge has cost 1,800 s.
@@ -206,9 +207,9 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
 10. Before any writer (AU CS2138 skills-as-contracts + plan/validate/execute/verify, 2026-11-05):
     - `python tools/check_task.py manifests/<task>.task.json`: content check against cache/<app>-index.json
       (ERROR = an id not in its indexed category, fix the plan; WARN UNVERIFIABLE = have the scout confirm the id).
-    - For Revit scripts: run the scripter's "members:" line through
-      `python ~/.claude/skills/revit-api/scripts/revit_api_check.py <Type.Member ...>`. Any NOT FOUND
-      sends the script back to the scripter (it is an invented member; the checker suggests the right one).
+    - For Revit scripts: <task>.precheck.json from script-checker must be PASS (2026-11-11; it replaces the
+      scripter's "members:" line run through revit_api_check.py: a compile against RevitAPI.dll proves every member
+      and overload). If you need it by hand: `python tools/revit_cs_check.py scripts/<task>.cs scripts/<task>.cleanup.cs`.
     - For AutoCAD scripts (2026-11-06): `python ~/.claude/skills/autocad-api/scripts/acad_api_check.py
       --lsp scripts/<task>.lsp --with library/acad/swarm_lib.lsp` (a .vN patch also needs `--with` its base script),
       then the scripter's "acad_members:" line through the same checker. Any NOT FOUND / DOC-ONLY goes back to the

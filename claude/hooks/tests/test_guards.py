@@ -220,6 +220,29 @@ run(WG, ["acad-ops"], A + "system", lisp(CLOSE + '(entdel (entlast))'), BLOCK, "
 run(WG, ["acad-ops"], A + "system", lisp(CLOSE), BLOCK, "acad-ops: close without the lock",
     env=dict(ENV, SWARM_LOCKS_DIR=str(TMP / "nolocks")))
 
+# ---- 2026-11-11: offline Revit C# check (tools/revit_cs_check.py) and the script-checker agent ----
+CSC = f"{SW}/tools/revit_cs_check.py"
+for prof in ("scripter", "script-debugger", "script-checker", "revit-writer"):
+    run(BG, [prof], "Bash", {"command": f'python {CSC} {SW}/scripts/CB6-R1-T5.v2.cs'}, ALLOW, f"{prof}: revit_cs_check")
+run(BG, ["script-checker"], "Bash", {"command": f'python "{SW_BASH}/tools/revit_cs_check.py" '
+                                                f'{SW}/scripts/T.cs --json {SW}/23-073_x/manifests/T.precheck.raw.json'},
+    ALLOW, "script-checker: revit_cs_check --json, Git-Bash path")
+run(BG, ["script-checker"], "Bash", {"command": f'python {CSC} {SW}/scripts/T.cs && del {SW}/scripts/T.cs'}, BLOCK,
+    "script-checker: chained command")
+run(BG, ["script-checker"], "Bash", {"command": f'python {SW}/tools/lsp_dryrun.py a.lsp b.dwg T'}, BLOCK,
+    "script-checker: another agent's tool")
+run(BG, ["revit-writer"], "Bash", {"command": f'python {SW}/validate.py {SW}/schemas/write.schema.json x.json'}, ALLOW,
+    "revit-writer: validate.py kept")
+run(BG, ["swarm-validate"], "Bash", {"command": f'python {CSC} {SW}/scripts/T.cs'}, BLOCK,
+    "swarm-validate: no compile check for other writers")
+run(WG, ["script-checker"], "Write", {"file_path": f"{SW}/23-073_x/manifests/CB6-R1-T5.precheck.json", "content": "{}"},
+    ALLOW, "script-checker: Write its precheck.json")
+run(WG, ["script-checker"], "Write", {"file_path": f"{SW}/scripts/CB6-R1-T5.v3.cs", "content": "x"}, BLOCK,
+    "script-checker: Write a script")
+run(WG, ["script-checker"], "Edit", {"file_path": f"{SW}/scripts/CB6-R1-T5.lsp"}, BLOCK, "script-checker: Edit a .lsp")
+run(WG, ["script-checker"], "Write", {"file_path": f"{SW}/23-073_x/manifests/CB6-R1-T5.expected.json"}, BLOCK,
+    "script-checker: Write the scripter's expected.json")
+
 failed = [r for r in results if not r[0]]
 for ok, guard, name, code, err in results:
     print(f"{'PASS' if ok else 'FAIL'}  {guard:30} {name}" + ("" if ok else f"  (exit {code}: {err})"))

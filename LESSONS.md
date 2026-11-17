@@ -58,6 +58,11 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
 | O29 | Web intake (ACC, Procore, download links): no agent has a browser. The main session fetches with Claude in Chrome (starts Chrome if needed, new tab, only sites/links Jeremy names, Jeremy signs in, a yes per download), then tools/intake_downloads.py moves the files from Downloads into inputs/ (top level; never overwrites) and logs source/version/sha256 in inputs/SOURCES.json. Revit models on ACC are opened by Revit, never downloaded. | Jeremy 2026-11-09 | → MARKUP Step 0b, QAQC step 0 |
 | O30 | One run id and one fresh snapshot per session (and after any crash/reopen); pass the run id to EVERY agent incl. script-debugger and visual-verifier. 24-071 SAN ran on 11-10 under 20261104-1905 and its 11-05 snapshot (384 warnings vs 498 live); two debug.json said run 'unknown'. | retro/20261110-p71.md | → prompt 19a, snapshot-taker, revit-writer, script-debugger |
 | O31 | After a Revit crash or reopen: run a read-only reconcile scout, treat earlier digests (ownership, counts) as stale, and close any count drop before the next write (700 vs 701 fixtures was never closed). | 24-071 P71-SAN-T1.reconcile.scout.json | → prompt 19b, revit-scout |
+| O32 | Project folder names with '&' (Egnyte "Blocks_6&7") break bash_allowlist_guard for every agent (validate.py refused). Run folder renamed 6and7; fix the guard's path quoting in a tooling session. Crop guard also only accepts C:/Users/Jeremy paths. | 23-073 run 20261109-1412 | → hooks |
+| O33 | Bash/crop guards resolve HOME as C:/Users/Jeremy: give every agent C:/Users/Jeremy/... paths (junction to C:/Users/j). With C:/Users/j paths validate.py and visual_crop.py are refused (T3 verify ran twice). | 23-073 run 20261109-1412 | → orchestrator prompts, hooks |
+| O34 | check_task.py on a partial Revit index WARNs on nearly every MEP/annotation id (UNVERIFIABLE); the per-task scout baseline is what confirms them. Have the scout baseline every target id, or index MEP categories. | 23-073 run 20261109-1412 | → revit-scout, check_task |
+| O35 | Sync after every verified batch, not at milestones: 8 verified tasks sat unsynced for ~14 h overnight (Jeremy asked twice). Orchestrator: SYNC B right after each verifier PASS batch. | 23-073 run 20261109-1412 | → orchestrator prompt |
+| O36 | Orchestrator: never chain a state-changing step after a command that can fail with ';' (a failed folder rename still ran the project.json rewrite). Use && or separate calls. | 23-073 run 20261109-1412 | → orchestrator |
 
 ## R. Revit bridge and API
 
@@ -121,6 +126,20 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
 | R56 | Fully qualify EVERY Autodesk.Revit.DB.Plumbing / .Mechanical / .Electrical type, incl. enums such as PipeSystemType ('inaccessible due to its protection level'); revit_api_check does not test this. | 24-071 P71-SAN-T3 v1 compile error | → scripter, script-debugger, revit-conventions |
 | R57 | R28 cap (2 debug cycles) was exceeded 2.5x: a dry-run-driven design iteration counts as a cycle; at cycle 2 the orchestrator asks Jeremy or changes the approach (simpler legs, manual list). Every cycle, even a one-line compile fix, writes a debug.json with the real run id. | 24-071 P71-SAN-T1 5 cycles | → script-debugger, prompt 19d |
 | R58 | script-debugger should run revit_api_check.py itself and report api_checked from its output only; a manual grep is 'not checked'. Until the Bash profile allows it, debug.json lists members_to_check and the orchestrator runs the checker before the next writer call. | 24-071 5 of 6 debug cycles unchecked | → script-debugger, prompt 19d; OPEN: bash_allowlist_guard edit (auto-mode classifier blocked it 11-12; Jeremy) |
+| R63 | Revit Parameter.Set(string) on a generic-annotation 'Note Text' reads back the OLD value until document.Regenerate(); compare after Regenerate, and report Set()==false separately from a read-back mismatch (CB6-R1-T3 v3 rolled back a good edit). | 23-073 CB6-R1-T3 | → scripter, revit-conventions |
+| R64 | Revision tag lookup: in IMEG-based models the family is 'MEP_Tag_Revision' and 'Revision Tag' is the TYPE name; match either. Wrap long notes (TextNote width) before placement search; check the visual for pipes through text. | 23-073 CB6-R1-T3/T4 | → scripter |
+| R65 | revit-mcp batch_export REPLY lags one call (returns the previous export's description) though the PDF lands on disk. Visual-verifier: find the newest PDF by sheet name and timestamp on disk; never trust the reply's path. | 23-073 run 20261109-1412 | → visual-verifier |
+| R66 | Revision.RevisionNumberingSequenceId cannot be set to InvalidElementId ('none') via the API (throws, unlabelled invocation error). Skip it; the revision keeps the default sequence (Jeremy accepted). | 23-073 run 20261109-1412 | → scripter, revit-conventions |
+| R67 | Annotation placement: clash-check against MEP element boxes (pipes by centre line + radius, fittings, accessories, equipment), not only text/tags; size clouds from bounding boxes measured after Regenerate; cloud the text only, never across the equipment it points to; keep the delta clear of the arcs. (T4 v3 note on a pipe stub; T3 labels 0.63 ft from the cloud.) | 23-073 run 20261109-1412 | → scripter, visual-verifier, revit-conventions |
+| R68 | Formula-driven family values (e.g. GI 'Holding Capacity') are read-only: change the driving dimension (length) instead, with Jeremy's OK. | 23-073 run 20261109-1412 | → revision-planner, scripter |
+| R69 | TextNote.get_BoundingBox(view) spans its leader: for leadered notes box the text from Coord/Width/Height/alignment and test the leader as segments (T16 falsely blocked by the GI note's leader box, twice — the merge-with-bbox line undid the first fix). | 23-073 run 20261109-1412 | → scripter |
+| R70 | Writers paste the whole .cs into send_code_to_revit; scripts of 800-1100 lines get refused as transcription risk (T10 NOT_RUN) and a 'v2' can be sent from memory. One long script per writer agent; the writer must re-read the file and check a version marker line. Bridge-side load-by-path would remove this. | 23-073 run 20261109-1412 | → revit-writer, tooling |
+| R71 | Built-in line styles are named with angle brackets ('<Thin Lines>'); LookupParameter names are case-sensitive (GI family uses LENGTH/WIDTH/HEIGHT). Take names from the scout, not assumed spelling. | 23-073 run 20261109-1412 | → scripter |
+| R72 | Script size budget: writers retype the whole .cs into send_code_to_revit; ~12k tokens (~450 lines) is the practical max (T9 46k, T15 30k refused outright). Scripters must state a token estimate (chars/4) and split into staged tasks above it. Long-term fix: bridge-side load-by-path. | 23-073 run 20261109-1412 | → scripter, tooling |
+| R73 | A pipe's System Type follows its PipingSystem: per-pipe Set of RBS_PIPING_SYSTEM_TYPE_PARAM returns true but reverts after Regenerate. Divide the system, check the new system holds only the intended elements, then retype the system element (ChangeTypeId). Dryruns must simulate the risky step inside a rolled-back SubTransaction (T9a v3/v4 dryruns GO, real runs failed). | 23-073 CB6-R1-T9a | → scripter, revit-conventions |
+| R74 | Hosted families ignore ElementTransformUtils.MoveElement in Z: lower/raise them via the writable offset parameter (INSTANCE_FREE_HOST_OFFSET_PARAM / Elevation from Level), find the sign live, check connector z after Regenerate (T15 v5 rolled back). | 23-073 CB6-R1-T15 | → scripter |
+
+| R60 | Never SetSystemType on a pipe that is connected to another system's network: it retypes the WHOLE connected network (25-076: setting the HD-1 vent stub to VENT turned the 3" main and 4" building drain into VENT, tags printed '4" V (0 FU)', fixture units 0). Disconnect first, retype only the isolated pipes, then reconnect and verify both systems' types; a verifier item must check the system type of neighbouring pipes, not only the retyped ones. | 25-076 run 20261111-0900 (T2f v5 / QAQC #2 P2.1) | → scripter, verifier, revit-conventions |
 
 ## A. AutoCAD bridge and LISP
 
@@ -257,6 +276,9 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
 | J7 | Delete a duplicate label rather than retexting it. Re-read areas he hand-edited before any batch. | Northgate CASCADE_DECISIONS:5,16 | → revision-planner |
 | J8 | Close Excel windows that automation opened. | memory close-excel-when-done | → excel-writer |
 | J9 | Claude syncs Revit itself around write batches (SYNC A / SYNC B), never after a FAIL. | memory revit-sync-authorized | → see R17 |
+| J10 | Always run independent work at the same time instead of waiting. Only the Revit bridge (one writer or read at a time) and AutoCAD IPC are serial. Everything else runs in parallel with whatever holds the bridge: scripting the downstream tasks of a chain, planning, letter drafting/auditing, code checks, email/Egnyte scouts, visual crops of finished exports. Script ahead: write every task of a dependency chain in parallel (they look things up by query), then dry-run/write them back to back. Never leave the bridge idle while an agent that doesn't need it could run. Writers can't sleep-wait on a lock (their Bash is restricted), so the orchestrator dispatches the next bridge agent when the previous one reports. | Jeremy 2026-11-11, 25-076 run 20261111-0900 ("you should always do simultaneous activities if possible instead of waiting") | → orchestrator prompt, MARKUP_SWARM_PROMPT |
+| J11 | Never offer a condensate pump as an option; condensate disposal is solved by gravity (raise the receptor, lower/reroute the drain, another receptor/tie-in). | Jeremy 2026-11-11, 25-076 ("do not offer me a condensate pump again") | → orchestrator, revision-planner |
+| J12 | The FINAL plan check response letter answers only the plan check comments and never says 'pending' (no PENDING markers or internal QA notes). Open and unverified items go in a separate internal claims checklist next to the letter. | Jeremy 2026-11-11, 25-076 | → response-writer (final mode), orchestrator |
 
 ---
 | J10 | One building's views need a template change: make a NEW template for them; never edit the shared one. | 24-071 11-05 | → scripter, revision-planner (R36) |
@@ -413,3 +435,27 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
 - Schema: write.schema.json requires result_source (R53).
 - revit-conventions scripting-lessons "Pacific Edge P71 lessons"; library/revit/pipe-branch-to-main.cs (from P71-SAN-T1.v6).
 - MARKUP_SWARM_PROMPT run protocol 19.
+## 2026-11-11 25-076 sheet-text batch
+- R61: FilledRegion.Create (masking or filled) is not allowed on a ViewSheet. To mask raster text on a sheet, use an opaque-background TextNoteType, or a scale-1 drafting view in a no-title viewport. Before masking, check whether the "raster" text is really live text (TextNote, schedule or drafting view) and edit it in place if so.
+- R62: give each long send_code script (>~300 lines) its own revit-writer. A batched writer runs out of context sending dry run + real run, and leaves the queued tasks unrun.
+
+- R59 (26036 CFA, 2026-11-13): send_code returns are truncated by the bridge at ~3 KB. 4 of 7 batch-2 scripts failed
+  precheck on return size (T6, T7a, T10b, T12). Scripter rule: print `done=/skipped=/failed=` and `cleanup_params`
+  FIRST, then a capped detail body; whole return <= 2.3 KB on every path (GO, NO_GO, ROLLED_BACK). Roll into
+  build/gen_agents*.py (scripter + script-checker) in a separate session.
+- R60 (26036 CFA, 2026-11-13): deleting a pipe/pipe fitting also deletes its centerline sub-element: class Element,
+  category OST_PipeCurvesCenterLine (-2008045) / OST_PipeFittingCenterLine (-2008072), a GetDependentElements member of
+  its host — NOT OST_CenterLines. Cascade guards must allow exactly these when dependent of a target (cost 3 NO_GOs on T7a).
+- R61 (26036 CFA, 2026-11-13): Viewport.GetLabelOutline can return a far-off outline (off-sheet Y) right after a view scale/crop change,
+  even after Regenerate; sanity-check it against the viewport box and fall back to an estimate, then confirm on the plotted sheet.
+- R62 (26036 CFA, 2026-11-13, SAFETY): an R47 dry run (commit inside TransactionGroup, then grp.RollBack()) PERSISTED its changes
+  for a script that edits VIEW state (rename, crop, HideElements, viewport SetBoxCenter, detail curves) — T16a v3. Same pattern on
+  pipes (T6/T7) rolled back fine. Rule: every R47 dry run must check grp.Start()/grp.RollBack() statuses AND re-read the model after
+  RollBack (created ids gone, changed params back) and return ROLLBACK_FAILED otherwise. For view/sheet/annotation edits prefer a
+  reads-only dry run (no setters) instead of commit-then-rollback. Viewport crop/scale/SetBoxCenter can move LabelOffset (restore it).
+- R63 (26036 CFA, 2026-11-13): WorkPlaneBased FD-1 floor drain places on a ReferencePlane (doc.Create.NewReferencePlane +
+  GetReference), NOT on a SketchPlane reference ("Failed to create family instance on face"); level-plane placement can't be moved
+  off the level. P-trap families placed by point come in lying flat — model FDs without trap families (trap by note).
+- R64 (26036 CFA): on a wye-only pipe type, a vertical vent off a horizontal drain needs a 45deg wye rolled up + 1/8 bend; never fall back to geometry that moves the main.
+- R65 (26036 CFA): on a wye-only pipe type, no NewTeeFitting variant (vertical, 45deg rolled, reducer, tee on back) makes a vent branch off a sloped 3in main; script the riser unconnected and leave the tie manual.
+- R66 (26036 CFA): size every leg between fittings as the routing-preference family take-offs + 0.5 ft (measure with a rolled-back probe), never a planned centre-to-centre distance.

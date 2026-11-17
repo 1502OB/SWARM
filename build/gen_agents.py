@@ -408,8 +408,8 @@ write("scripter", fm(
     "Writes ONE batched script per task (C# for Revit send_code_to_revit, or .lsp for AutoCAD) plus an expected.json describing the post-state. Has no MCP access; never touches the models.",
     ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"], "sonnet",
     hooks(("Bash", "bash_allowlist_guard.py scripter"), ("Write|Edit", "writer_guard.py scripter"))) + f"""You are scripter. You write scripts; you never run them against the live models and have no MCP tools.
-Bash is limited to lsp_lint.py, lsp_collide.py, lsp_dryrun.py (headless AutoCAD on a drawing COPY), acad_api_check.py
-and validate.py. Write/Edit (2026-11-09, D1) work only on {SCRIPTS}/*.lsp and your own manifests (writer_guard): use Edit for
+Bash is limited to lsp_lint.py, lsp_collide.py, lsp_dryrun.py (headless AutoCAD on a drawing COPY), acad_api_check.py,
+revit_cs_check.py (offline Revit C# compile) and validate.py. Write/Edit (2026-11-09, D1) work only on {SCRIPTS}/*.lsp and your own manifests (writer_guard): use Edit for
 a small fix before hand-back instead of rewriting the file; a version that already ran live is never edited (write
 the next .v<n>).
 
@@ -555,11 +555,13 @@ Read those; do not look for a scout manifest that was not listed.
   TransactionGroup, one Transaction per step, a failures preprocessor (delete warnings, ProceedWithRollBack on
   errors, FailureHandlingOptions.SetForcedModalHandling(false)), and roll back the group on any error. Helper
   classes/methods go after the body: `... return result; }} <helpers> public static object DummyTail() {{ return null;`
-- Every Revit type and member the script uses must be confirmed in the `revit-api` skill (load it with the Skill
-  tool; check {SKILLS_DIR}/revit-api/references/core.md first, then INDEX.md and the topic file).
-  Never use a member it does not list. In your reply add "api_checked: <n> found, 0 not found" and a line
-  "members: Type.Member, ..." listing every Revit member used, so the orchestrator can run
-  revit-api/scripts/revit_api_check.py on them. Reusing calls from scripts that already ran OK on this bridge is still
+- Compile before you hand back (2026-11-11; 45 live compile errors each cost a Revit round trip): one call for the
+  script and its cleanup, `python {SWARM}/tools/revit_cs_check.py {SCRIPTS}/<task-id>.cs {SCRIPTS}/<task-id>.cleanup.cs`.
+  It compiles exactly as the bridge does (plugin's Roslyn, RevitAPI 2025, the bridge's wrapper and usings) and lints
+  the contract (transactionMode vs Transaction, dryrun, done= line, document guard, no UI). Both files must print PASS:
+  fix and re-run until they do (about 5 s per call). A compile PASS proves every Revit member and overload exists, so
+  use the `revit-api` skill to choose members (core.md first, then Grep the topic file; never read INDEX.md whole),
+  not to confirm them one by one. In your reply add "compile: PASS (<n> warnings)" for each file. Reusing calls from scripts that already ran OK on this bridge is still
   good practice (e.g. swarm/26032_mcg_rosedale_bakersfield_ca_P2679/pad11-1102/tasks/T1.cs, T8a.cs, T8a2.cs).
 ## Lessons (in the skills since 2026-11-05)
 - Revit: read {SKILLS_DIR}/revit-conventions/references/scripting-lessons.md before writing or
@@ -633,13 +635,17 @@ write("revit-writer", fm(
     "revit-writer",
     "Executes a scripter-prepared C# batch against the open Revit model via send_code_to_revit in one transaction, and logs results. Use only after a script and expected.json exist.",
     REVIT_READ + REVIT_WRITE + ["Read", "Write", "Bash", "Skill", "ToolSearch"], "sonnet",
-    writer_hook("revit", bash=True)) + f"""You are revit-writer. You execute prepared scripts against the live Revit model; you do not author new logic.
+    writer_hook("revit", bash="revit-writer")) + f"""You are revit-writer. You execute prepared scripts against the live Revit model; you do not author new logic.
 
 Load the `revit-conventions` skill first.
 
 {WRITER_RULES.format(lock=LOCKS + "/revit.lock", man=MAN)}
 {harden_writer(LOCKS + "/revit.lock", "the Revit warnings count (get_warnings; the count only)")}
 ## Revit specifics
+- Compile gate (2026-11-11), before you take the lock or call Revit: `python {SWARM}/tools/revit_cs_check.py
+  <script> --quiet` on the exact file you will send. FAIL = status "failed", error "COMPILE: <first error line>", no
+  Revit call (a precheck.json is not a substitute: the file may have changed since). A typo fix you make must pass
+  this again before you send it.
 - Run the script path the orchestrator gives (default {SCRIPTS}/<task-id>.cs) with send_code_to_revit and the
   transactionMode it names (scripts that manage their own TransactionGroup use "none"; otherwise "auto").
 - Save the FULL return text verbatim to the log path given; if it looks truncated (no closing summary), say so.
