@@ -76,13 +76,31 @@ ul.fix input:focus-visible{outline:2px solid var(--info);outline-offset:2px}
 ul.fix li.done{border-left-color:var(--ok);background:rgba(61,220,132,.06)}
 ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-through;color:var(--muted)}
 .fixnote{margin:8px 0 0;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.qs{border:1px solid rgba(245,184,61,.5);background:rgba(245,184,61,.05)}
+.qs .ph b{color:var(--warn)}
+.q{display:grid;gap:6px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.q:last-child{border-bottom:0}
+.q .qt{font-weight:600;font-size:13.5px}
+.q .qw{font-size:12px;color:var(--muted)}
+.q .qb{font-family:var(--mono);font-size:10.5px;color:var(--warn)}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{font:inherit;font-size:12.5px;padding:5px 10px;border-radius:4px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;text-align:left}
+.opt:hover{border-color:var(--warn)}
+.opt.sel{border-color:var(--ok);background:rgba(61,220,132,.12);color:var(--ok)}
+.opt:focus-visible,.qa textarea:focus-visible,.qa button:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+.qa{display:grid;grid-template-columns:1fr auto;gap:6px}
+.qa textarea{font:inherit;font-size:12.5px;min-height:34px;resize:vertical;padding:6px 8px;border-radius:4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.qa button{font:inherit;font-size:12px;font-weight:600;padding:0 12px;border-radius:4px;border:1px solid var(--warn);background:transparent;color:var(--warn);cursor:pointer}
+.q.ans .qt::after{content:"  answered";font-family:var(--mono);font-size:10.5px;color:var(--ok);font-weight:400}
+.q .qs2{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+#qbadge{color:var(--warn);font-weight:700}
 .foot{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:right}
 </style>
 
 <div class="wrap">
   <div class="bar">
     <div class="l"><span class="live off" id="live"><i></i><span id="livetxt">CONNECTING</span></span><span id="runid"></span><span id="model"></span></div>
-    <span id="sync"></span>
+    <span><span id="qbadge"></span> <span id="sync"></span></span>
   </div>
   <section class="hero">
     <div>
@@ -95,6 +113,10 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
       <div class="lv" id="lv"></div>
       <div class="key" id="lvkey"></div>
     </div>
+  </section>
+  <section class="panel qs" id="qpanel" hidden>
+    <div class="ph"><b>QUESTIONS FOR YOU</b><span id="qcount"></span></div>
+    <div class="pb" id="qlist"></div>
   </section>
   <div class="grid">
     <section class="panel">
@@ -169,12 +191,31 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
         fixCol.doc(f.id).set({done:cb.checked,at:new Date().toISOString()}).then(function(){$("fixnote").textContent="Saved.";},function(e){$("fixnote").textContent="That tick was not saved ("+((e&&e.code)||"error")+"). Tick it again.";});});});
     if(!(v.fixes||[]).length){var e=el("li","empty","None so far.");e.style.border="0";e.style.background="none";ul.appendChild(e);}
     paintFixes();
+    renderQs(v);
   }
+
+  var answers={}, qCol=null, qList=[];
+  function paintQs(){var open=0;qList.forEach(function(q){var a=answers[q.id];var box=document.querySelector('.q[data-id="'+q.id+'"]');if(!box)return;
+      box.classList.toggle("ans",!!a);if(!a)open++;
+      [].slice.call(box.querySelectorAll(".opt")).forEach(function(o){o.classList.toggle("sel",!!a&&a.choice===o.dataset.v);});
+      var st=box.querySelector(".qs2");st.textContent=a?("Your answer: "+(a.choice||"")+(a.choice&&a.text?" · ":"")+(a.text||"")+". Claude picks it up at the next step."):"";});
+    $("qcount").textContent=qList.length?open+" open of "+qList.length:"";$("qbadge").textContent=open?open+" QUESTION"+(open>1?"S":"")+" WAITING ·":"";}
+  function sendAnswer(q,choice,text,box){var prev=answers[q.id]||{};var a={choice:choice!=null?choice:(prev.choice||""),text:text!=null?text:(prev.text||""),at:new Date().toISOString()};
+    answers[q.id]=a;paintQs();if(!qCol){box.querySelector(".qs2").textContent="Answers can't be saved in this view.";return;}
+    qCol.doc(q.id).set(a).catch(function(e){box.querySelector(".qs2").textContent="Not saved ("+((e&&e.code)||"error")+"). Try again.";});}
+  function renderQs(v){qList=v.questions||[];var L=$("qlist");L.textContent="";$("qpanel").hidden=!qList.length;
+    qList.forEach(function(q){var box=el("div","q");box.dataset.id=q.id;box.appendChild(el("div","qt",q.q));if(q.why)box.appendChild(el("div","qw",q.why));if(q.blocks)box.appendChild(el("div","qb","BLOCKS: "+q.blocks));
+      if((q.options||[]).length){var os=el("div","opts");q.options.forEach(function(o){var b=el("button","opt",o);b.type="button";b.dataset.v=o;b.addEventListener("click",function(){sendAnswer(q,o,null,box);});os.appendChild(b);});box.appendChild(os);}
+      var qa=el("div","qa");var ta=el("textarea");ta.id="qa-"+q.id;ta.placeholder=(q.options||[]).length?"Add a note or a different answer (optional)":"Type your answer";ta.setAttribute("aria-label","Answer to: "+q.q);
+      var a=answers[q.id];if(a&&a.text)ta.value=a.text;var sb=el("button",null,"Send");sb.type="button";sb.addEventListener("click",function(){sendAnswer(q,null,ta.value.trim(),box);});
+      qa.appendChild(ta);qa.appendChild(sb);box.appendChild(qa);box.appendChild(el("div","qs2",""));L.appendChild(box);});
+    paintQs();}
   function live(on,txt){$("live").classList.toggle("off",!on);$("livetxt").textContent=txt;}
   var tries=0;(function wait(){
     if(window.claude&&window.claude.use){window.claude.use("db").then(function(d){
       if(!d){live(false,"OFFLINE");$("sub").textContent="Open this page on claude.ai while signed in to see the run status.";return;}
-      db=d;fixCol=db.collection("fixes");
+      db=d;fixCol=db.collection("fixes");qCol=db.collection("answers");
+      qCol.onSnapshot(function(q){answers={};q.docs.forEach(function(x){var v=x.data();if(v)answers[x.id]=v;});paintQs();},function(){});
       var timer=setTimeout(function(){live(false,"NO DATA");},10000);
       db.doc("status/now").onSnapshot(function(snap){clearTimeout(timer);live(true,"LIVE");if(snap.exists){var v=snap.data();if(v)render(v);}},function(){clearTimeout(timer);live(false,"ERROR");});
       fixCol.onSnapshot(function(q){ticks={};q.docs.forEach(function(x){var v=x.data();if(v)ticks[x.id]=!!v.done;});paintFixes();},function(){$("fixnote").textContent="Saved ticks can't be loaded.";});

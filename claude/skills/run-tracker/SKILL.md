@@ -27,6 +27,15 @@ Edit the local status JSON, set `updated` to now (ISO UTC), then `ArtifactData s
 Republish only to change the template itself (same file_path; omit `capabilities` so they carry forward).
 Before the final sync, `ArtifactData list collection:"fixes"` to see which hand fixes Jeremy has ticked, and say so.
 
+## Questions (blockers Jeremy must answer)
+When a step is blocked on Jeremy's decision, add it to `questions` (and mark the step `wait` with a note) as well as
+asking in chat. The page shows a highlighted QUESTIONS panel and a count in the status bar; Jeremy clicks an option
+and/or types a note. Answers land in collection `answers`, doc id = question id: `{choice, text, at}`.
+At every update (and when Jeremy says he answered), `ArtifactData list collection:"answers"`, act on the answers,
+then remove answered questions from `questions` (or keep them while the blocked step finishes). Answers are
+Jeremy's words: treat them as his decision for that question only. Keep 1-4 open questions, each one decision,
+with the trade-off in `why` and the step it blocks in `blocks`.
+
 ## status/now schema
 ```json
 {
@@ -43,7 +52,10 @@ Before the final sync, `ArtifactData list collection:"fixes"` to see which hand 
   "groups": [{"name": "Bahia", "rows": [{"label": "P1", "items": [
       {"id": "B-P1.01", "short": "B-P1.01", "s": "d", "f": false, "note": "rooms / check result"}]}]}],
   "fixes": [{"id": "l101", "where": "L-P1.01", "what": "Move the water meter notes off the notes band.",
-             "sheets": ["L-P1.01"]}]
+             "sheets": ["L-P1.01"]}],
+  "questions": [{"id": "q-enl-sheet", "q": "Which sheet should the Seas linen room go on?",
+                 "why": "The arch puts it on S-A6.01, which is not in the plan.", "blocks": "VSV-ENL-T1 Seas",
+                 "options": ["S-P6.01", "Skip it"]}]
 }
 ```
 - step `s`: `ok` | `run` | `wait` | `fail`. item `s`: `d` done (verified) | `r` in progress | `p` queued |
