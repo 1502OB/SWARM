@@ -21,7 +21,7 @@ from swarm_paths import SWARM, CLAUDE  # noqa: E402  (SWARM_HOME / CLAUDE_CONFIG
 
 REPO = SWARM / "claude"
 LIVE = CLAUDE
-SKILLS = ["acad-conventions", "revit-conventions", "revit-api", "autocad-api", "plumbing-code"]
+SKILLS = ["acad-conventions", "revit-conventions", "revit-api", "autocad-api", "plumbing-code", "run-tracker"]
 SKIP_DIRS = {"__pycache__"}
 
 
