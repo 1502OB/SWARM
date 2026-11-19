@@ -47,7 +47,9 @@ with the trade-off in `why` and the step it blocks in `blocks`.
   "totals": [{"v": "30/44", "l": "sheets"}, {"v": "11/13", "l": "steps"}],
   "level": {"n": 4, "done": false, "text": "LEVEL 4 · ENLARGED PLANS",
             "labels": ["Loaded", "P1", "P2", "Enlarged", "Synced"]},
-  "steps": [{"t": "Match P1 sheets", "n": "plans aligned to the arch", "s": "ok"}],
+  "steps": [{"t": "Match P1 sheets", "n": "plans aligned to the arch", "s": "ok"},
+            {"t": "Enlarged plans", "n": "writing Seas", "s": "run",
+             "sub": [{"t": "Bahia dry run + write", "s": "ok"}, {"t": "Seas dry run + write", "s": "run"}]}],
   "itemsName": "Sheets",
   "groups": [{"name": "Bahia", "rows": [{"label": "P1", "items": [
       {"id": "B-P1.01", "short": "B-P1.01", "s": "d", "f": false, "note": "rooms / check result"}]}]}],
@@ -58,7 +60,9 @@ with the trade-off in `why` and the step it blocks in `blocks`.
                  "options": ["S-P6.01", "Skip it"]}]
 }
 ```
-- step `s`: `ok` | `run` | `wait` | `fail`. item `s`: `d` done (verified) | `r` in progress | `p` queued |
+- step `s`: `ok` | `run` | `wait` | `fail`. `sub` (optional) lists every task inside a step with its own `s`; the page
+  shows "n of m left" and opens the list for a running or failed step. List ALL remaining tasks of each step
+  (dry runs, writes, exports, checks, syncs), and tick them off as they finish. item `s`: `d` done (verified) | `r` in progress | `p` queued |
   `x` failed; `f: true` = needs a hand fix (red underline). Mark an item `d` only after verify + visual pass.
 - `short` keeps chips small (first chip of a row full number, the rest e.g. "1.02"). `note` shows on click.
 - `level`: 3-6 milestones for the run type (plan check: Intake, Plan, Writes, Checks, Letter, Synced).

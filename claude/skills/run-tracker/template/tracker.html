@@ -50,6 +50,16 @@ ol.log li:last-child{border-bottom:0}
 .tag{font-weight:700}
 .tag.ok{color:var(--ok)} .tag.run{color:var(--warn)} .tag.wait{color:var(--muted)} .tag.fail{color:var(--hot)}
 ol.log .t{color:var(--fg);display:block} ol.log .n{color:var(--muted);font-size:11px;display:block}
+details.sub{margin-top:4px}
+details.sub summary{cursor:pointer;font-size:11px;color:var(--info);list-style:none}
+details.sub summary::-webkit-details-marker{display:none}
+details.sub summary::before{content:"+ ";}
+details.sub[open] summary::before{content:"2 ";}
+details.sub summary:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+details.sub ul{list-style:none;margin:4px 0 0;padding:0 0 0 2px;display:grid;gap:2px}
+details.sub li{display:grid;grid-template-columns:14px 1fr;gap:6px;font-size:11px;color:var(--fg);border:0;padding:0}
+details.sub li.ok{color:var(--muted)}
+details.sub li .tag{font-weight:700}
 .b{padding:8px 0;border-bottom:1px dashed var(--line);display:grid;gap:5px}
 .b:last-child{border-bottom:0}
 .bh{display:flex;justify-content:space-between;font-weight:600}
@@ -170,7 +180,13 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
       for(var i=1;i<=n;i++){var sp=el("span",i<L.n||(i===L.n&&L.done)?"done":i===L.n?"cur":"",String(i));lv.appendChild(sp);k.appendChild(el("span",null,labels[i-1]||""));}}
     var log=$("log");log.textContent="";var steps=v.steps||[],ok=0;
     steps.forEach(function(x){if(x.s==="ok")ok++;var li=el("li");li.appendChild(el("span","tag "+(x.s||"wait"),{ok:"[OK]",run:"[RUN]",fail:"[ERR]"}[x.s]||"[--]"));
-      var w=el("span");w.appendChild(el("span","t",x.t));if(x.n)w.appendChild(el("span","n",x.n));li.appendChild(w);log.appendChild(li);});
+      var w=el("span");w.appendChild(el("span","t",x.t));if(x.n)w.appendChild(el("span","n",x.n));
+      var sub=x.sub||[];if(sub.length){var left=sub.filter(function(z){return z.s!=="ok";}).length;
+        var d=el("details","sub");if(x.s==="run"||x.s==="fail")d.open=true;
+        d.appendChild(el("summary",null,left?left+" of "+sub.length+" left":"all "+sub.length+" done"));
+        var ul=el("ul");sub.forEach(function(z){var r=el("li",z.s||"wait");r.appendChild(el("span","tag "+(z.s||"wait"),{ok:"✓",run:"▸",fail:"✕"}[z.s]||"·"));r.appendChild(el("span",null,z.t));ul.appendChild(r);});
+        d.appendChild(ul);w.appendChild(d);}
+      li.appendChild(w);log.appendChild(li);});
     if(!steps.length)log.appendChild(el("li","empty","No steps yet."));
     $("stepcount").textContent=steps.length?ok+" of "+steps.length+" done":"";
     if(v.itemsName)$("itemsname").textContent=v.itemsName.toUpperCase();
