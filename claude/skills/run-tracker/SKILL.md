@@ -44,12 +44,14 @@ with the trade-off in `why` and the step it blocks in `blocks`.
   "sub": "24-071 Pacific Edge. Bahia, Lobby + Coast and Seas, matched to the architect's VS model.",
   "run": "20261119-VSV", "model": "PLMB-24220-R25",
   "sync": "P1 + P2 SYNCED TO CENTRAL", "syncOk": true,
-  "totals": [{"v": "30/44", "l": "sheets"}, {"v": "11/13", "l": "steps"}],
+  "totals": [{"v": "30/44", "l": "sheets"}, {"v": "11/13", "l": "steps"},
+             {"v": "2.4M", "l": "subagent tokens", "cls": "tok", "title": "29 agents reported; main session not counted"}],
   "level": {"n": 4, "done": false, "text": "LEVEL 4 · ENLARGED PLANS",
             "labels": ["Loaded", "P1", "P2", "Enlarged", "Synced"]},
   "steps": [{"t": "Match P1 sheets", "n": "plans aligned to the arch", "s": "ok"},
             {"t": "Enlarged plans", "n": "writing Seas", "s": "run",
-             "sub": [{"t": "Bahia dry run + write", "s": "ok"}, {"t": "Seas dry run + write", "s": "run"}]}],
+             "est": "15 min", "left": "~12 min left",
+             "sub": [{"t": "Bahia dry run + write", "s": "ok"}, {"t": "Seas dry run + write", "s": "run", "est": "8 min"}]}],
   "itemsName": "Sheets",
   "groups": [{"name": "Bahia", "rows": [{"label": "P1", "items": [
       {"id": "B-P1.01", "short": "B-P1.01", "s": "d", "f": false, "note": "rooms / check result"}]}]}],
@@ -62,7 +64,12 @@ with the trade-off in `why` and the step it blocks in `blocks`.
 ```
 - step `s`: `ok` | `run` | `wait` | `fail`. `sub` (optional) lists every task inside a step with its own `s`; the page
   shows "n of m left" and opens the list for a running or failed step. List ALL remaining tasks of each step
-  (dry runs, writes, exports, checks, syncs), and tick them off as they finish. item `s`: `d` done (verified) | `r` in progress | `p` queued |
+  (dry runs, writes, exports, checks, syncs), and tick them off as they finish.
+- `est` on a step or sub-task = estimated duration (shown as "~8 min" until done); step `left` = time remaining.
+  Base estimates on this run's own timings (agent duration_ms in task notifications), not guesses.
+- Tokens: add a totals entry `{"v": "<sum>", "l": "subagent tokens", "cls": "tok"}`: the sum of `subagent_tokens`
+  from every agent task notification this run (say in `title` how many agents and that the main session is not
+  counted). Update it at each tracker update. item `s`: `d` done (verified) | `r` in progress | `p` queued |
   `x` failed; `f: true` = needs a hand fix (red underline). Mark an item `d` only after verify + visual pass.
 - `short` keeps chips small (first chip of a row full number, the rest e.g. "1.02"). `note` shows on click.
 - `level`: 3-6 milestones for the run type (plan check: Intake, Plan, Writes, Checks, Letter, Synced).
