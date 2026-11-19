@@ -129,9 +129,12 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
   setInterval(ago,30000);
   function selectChip(b){[].slice.call(document.querySelectorAll(".c.sel")).forEach(function(c){c.classList.remove("sel");});b.classList.add("sel");
     var x=info[b.dataset.id]||{};var st={d:"done",r:"in progress",x:"failed"}[x.s]||"queued";
-    $("detail").textContent=b.dataset.id+" · "+st+(x.note?" · "+x.note:"")+(x.f?" · needs a hand fix":"");}
+    $("detail").textContent=b.dataset.id+" · "+st+(x.note?" · "+x.note:"")+(b.classList.contains("f")?" · needs a hand fix":b.dataset.fixed?" · hand fix done":"");}
+  var fixList=[];
+  function chipFlags(){var open={},closed={};fixList.forEach(function(f){(f.sheets||[]).forEach(function(id){if(ticks[f.id])closed[id]=1;else open[id]=1;});});
+    [].slice.call(document.querySelectorAll(".c[data-id]")).forEach(function(c){var it=info[c.dataset.id]||{};var need=open[c.dataset.id]||(it.f&&!closed[c.dataset.id]);c.classList.toggle("f",!!need);c.dataset.fixed=closed[c.dataset.id]&&!need?"1":"";});}
   function paintFixes(){var n=0,t=0;[].slice.call(document.querySelectorAll("#fixes input")).forEach(function(b){t++;b.checked=!!ticks[b.dataset.id];b.closest("li").classList.toggle("done",b.checked);if(b.checked)n++;});
-    $("fixcount").textContent=t?n+" of "+t+" done":"";}
+    $("fixcount").textContent=t?n+" of "+t+" done":"";chipFlags();}
   function render(v){
     updated=v.updated||updated;ago();
     if(v.title){$("title").textContent=v.title;document.title=v.title;}
@@ -160,7 +163,7 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
       g.appendChild(b);});
     if(!(v.groups||[]).length)g.appendChild(el("p","empty","No sheets yet."));
     $("sheetcount").textContent=tot?dn+" of "+tot+" done":"";
-    var ul=$("fixes");ul.textContent="";(v.fixes||[]).forEach(function(f){var li=el("li");li.dataset.id=f.id;var cb=el("input");cb.type="checkbox";cb.id="fix-"+f.id;cb.dataset.id=f.id;
+    fixList=v.fixes||[];var ul=$("fixes");ul.textContent="";(v.fixes||[]).forEach(function(f){var li=el("li");li.dataset.id=f.id;var cb=el("input");cb.type="checkbox";cb.id="fix-"+f.id;cb.dataset.id=f.id;
       var lab=el("label");lab.htmlFor=cb.id;lab.appendChild(el("b",null,f.where));lab.appendChild(el("span",null,f.what));li.appendChild(cb);li.appendChild(lab);ul.appendChild(li);
       cb.addEventListener("change",function(){ticks[f.id]=cb.checked;paintFixes();if(!fixCol){$("fixnote").textContent="Ticks can't be saved in this view.";return;}
         fixCol.doc(f.id).set({done:cb.checked,at:new Date().toISOString()}).then(function(){$("fixnote").textContent="Saved.";},function(e){$("fixnote").textContent="That tick was not saved ("+((e&&e.code)||"error")+"). Tick it again.";});});});

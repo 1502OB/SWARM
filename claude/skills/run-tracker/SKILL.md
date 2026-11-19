@@ -42,12 +42,15 @@ Before the final sync, `ArtifactData list collection:"fixes"` to see which hand 
   "itemsName": "Sheets",
   "groups": [{"name": "Bahia", "rows": [{"label": "P1", "items": [
       {"id": "B-P1.01", "short": "B-P1.01", "s": "d", "f": false, "note": "rooms / check result"}]}]}],
-  "fixes": [{"id": "l101", "where": "L-P1.01", "what": "Move the water meter notes off the notes band."}]
+  "fixes": [{"id": "l101", "where": "L-P1.01", "what": "Move the water meter notes off the notes band.",
+             "sheets": ["L-P1.01"]}]
 }
 ```
 - step `s`: `ok` | `run` | `wait` | `fail`. item `s`: `d` done (verified) | `r` in progress | `p` queued |
   `x` failed; `f: true` = needs a hand fix (red underline). Mark an item `d` only after verify + visual pass.
 - `short` keeps chips small (first chip of a row full number, the rest e.g. "1.02"). `note` shows on click.
 - `level`: 3-6 milestones for the run type (plan check: Intake, Plan, Writes, Checks, Letter, Synced).
+- `fixes[].sheets` lists the item ids the fix clears: ticking the fix removes their red underline (an item stays
+  red while any fix that lists it is unticked). Put `f: true` on those items too, for viewers without the db.
 - `fixes` ids are stable slugs; never reuse an id for a different fix (ticks are keyed by id).
 - Plain words in every string (Jeremy reads it); counts only after counting them.
