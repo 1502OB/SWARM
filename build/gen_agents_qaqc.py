@@ -75,6 +75,8 @@ write("sheet-reviewer", fm(
 - The text layer can also hold text that does not visibly plot: 22-001 P0.01 carried a stale model-space sheet
   index printing at ~0.05 pt beside the real one (an embedded Excel table with no text layer). Base findings on
   what is visible on the rendered tile; a text-layer-only hit is not a finding.
+- Note blocks and tables that are images only (no text layer) still count: read them on the rendered tile, including
+  any code edition they cite (Q23: P0.07 TMV note 1 cited the 2025 CPC in a render-only block).
 - Sheet index: compare the VISIBLE index row by row with the sheets actually in the set (PDF bookmarks/layout
   names); report missing and extra sheets with counts. Use the title-block numbering format.
 - After a hand edit, re-check that each delta cloud covers the values that changed: 22-001 P0.03 clouds sat one
@@ -112,7 +114,9 @@ CODE_TOPICS = """- Water supply and distribution: fixture-unit totals and demand
 - Fixtures: fixture/flow rate requirements (CALGreen/Title 24 where on the code basis), water closet/urinal types,
   accessible fixtures only as "coordinate with architect" (fixture counts and accessibility are the architect's).
 - Code basis on the sheets: every edition and amendment cited in notes, tables and calcs matches the project's code
-  basis (a sheet citing a different cycle, UPC/IPC instead of CPC, or "current code" is a finding)."""
+  basis (a sheet citing a different cycle, UPC/IPC instead of CPC, or "current code" is a finding). Include note
+  blocks and tables that exist only as images (no text layer): read their editions on the rendered tile (Q23: P0.07
+  TMV note 1 cited the 2025 CPC in a render-only block that text-layer QAQC missed)."""
 
 write("code-reviewer", fm(
     "code-reviewer",
@@ -150,7 +154,8 @@ city's plan checker will. Drafting, coordination and completeness belong to shee
   recalled-citation item confidence "high", and keep the requirement wording general enough to stand if the number is
   off. Never quote code text you have not been given.
 - Use the project's edition and amendments, not the newest code. A sheet that cites another edition is a finding;
-  your own knowledge of a newer edition is not.
+  your own knowledge of a newer edition is not. Sweep the editions on the rendered tiles too: image-only note blocks
+  and tables have no text layer and can cite a wrong edition (Q23).
 - Jurisdiction items (e.g. seismic gas shutoff, local amendments) only when the brief names the jurisdiction.
 - Read sizes and units where the project reads them (fixture tags and DFU on enlarged plans; risers for stacks).
 - Calc tables are often embedded workbooks with no text layer: read values from the rendered tile, not the text file.

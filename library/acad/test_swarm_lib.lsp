@@ -66,7 +66,7 @@
   (swlt:check "vp-msbox-twist-90" (equal (swl:vp-msbox (append ed (list (cons 51 (/ pi 2.0))))) (list 95.0 190.0 105.0 210.0) 1e-9))
   (swlt:report))
 
-(defun c:SWLTEST-RUN (/ x0 l1 l2 t1 h1 c ed ck hits m1 m2 h43 mb l3 gb lf l4 l5 l6 hf h4 fn rs f ln ln2 lo fv vb cx cy vr)
+(defun c:SWLTEST-RUN (/ x0 l1 l2 t1 h1 c ed ck hits m1 m2 h43 mb l3 gb lf l4 l5 l6 hf h4 fn rs f ln ln2 lo fv vb cx cy vr c2)
   (setq SWLT:PASS 0 SWLT:FAIL 0 SWLT:BAD nil x0 1000000.0)
   ;; two lines: one crossing the test box, one far away; a text with known values
   (setq l1 (progn (entmake (list '(0 . "LINE") '(410 . "Model") '(8 . "0") (list 10 (- x0 5) 1.0 0.0) (list 11 (+ x0 5) 1.0 0.0))) (entlast)))
@@ -89,6 +89,11 @@
                (swlt:check "cloud-clockwise-closed" (car ck))
                (swlt:check "cloud-vertex-box" (equal (cadr ck) (list (- x0 0.1) 29.9 (+ x0 2.1) 31.1) 1e-6))))
   (swlt:check "cloud-check-rejects-wrong-bulge" (if c (not (car (swl:cloud-check (entget c) 0.52))) nil))
+  ;; A52: a +0.52 request still makes an OUTWARD (negative-bulge) cloud; a positive-bulge cloud never passes the check
+  (setq c2 (swl:entmake-cloud (swl:pad (list x0 34.0 (+ x0 2.0) 35.0) 0.1) 0.34 0.52 "0" "Model"))
+  (swlt:check "cloud-entmake-forces-outward" (and c2 (car (swl:cloud-check (entget c2) -0.52))))
+  (if c2 (progn (entmod (mapcar '(lambda (g) (if (= (car g) 42) (cons 42 0.52) g)) (entget c2)))
+                (swlt:check "cloud-check-rejects-inverted" (not (car (swl:cloud-check (entget c2) 0.52))))))
   ;; ---- 2026-11-09 helpers (A32-A50)
   ;; MTEXT: top-left attachment at y=100 and bottom-left at y=50; bottom = top - max(bbox h, DXF 43)
   (setq m1 (progn (entmake (list '(0 . "MTEXT") '(100 . "AcDbEntity") '(410 . "Model") '(8 . "0") '(100 . "AcDbMText")

@@ -324,7 +324,8 @@
   (setq bl (list (car b) (cadr b)) br (list (caddr b) (cadr b))
         tr (list (caddr b) (cadddr b)) tl (list (car b) (cadddr b)))
   (append (swl:side bl tl chord) (swl:side tl tr chord) (swl:side tr br chord) (swl:side br bl chord)))
-;; check an LWPOLYLINE cloud: closed, clockwise (signed area < 0), every bulge = bulge -> (ok vertexbox nvertices)
+;; check an LWPOLYLINE cloud: closed, clockwise (signed area < 0), every bulge = bulge AND negative (arcs bulge OUTWARD
+;; on clockwise vertices; a positive bulge is an inverted cloud, A52) -> (ok vertexbox nvertices)
 (defun swl:cloud-check (ed bulge / pts bs a i n p q ok)
   (foreach g ed
     (cond ((= (car g) 10) (setq pts (cons (list (cadr g) (caddr g)) pts)))
@@ -334,14 +335,15 @@
     (setq p (nth i pts) q (nth (rem (1+ i) n) pts)
           a (+ a (- (* (car p) (cadr q)) (* (car q) (cadr p)))) i (1+ i)))
   (setq ok (and (> n 2) (= 1 (logand 1 (cdr (assoc 70 ed)))) (< a 0.0) (= (length bs) n)))
-  (foreach b bs (if (> (abs (- b bulge)) 1e-5) (setq ok nil)))
+  (foreach b bs (if (or (> (abs (- b bulge)) 1e-5) (>= b 0.0)) (setq ok nil)))
   (list ok (if pts (swl:vtxbox ed) '(0.0 0.0 0.0 0.0)) n))
-;; entmake a closed cloud LWPOLYLINE on layer lay in space (layout name or "Model"), returns its ename or nil
+;; entmake a closed cloud LWPOLYLINE on layer lay in space (layout name or "Model"), returns its ename or nil.
+;; The vertices are clockwise, so the bulge is always written NEGATIVE (outward arcs) whatever sign is passed (A52).
 (defun swl:entmake-cloud (b chord bulge lay space / pts dl)
   (setq pts (swl:cloudpts b chord))
   (setq dl (list '(0 . "LWPOLYLINE") '(100 . "AcDbEntity") (cons 410 space) (cons 8 lay) '(100 . "AcDbPolyline")
                  (cons 90 (length pts)) '(70 . 1)))
-  (foreach p pts (setq dl (append dl (list (cons 10 p) (cons 42 bulge)))))
+  (foreach p pts (setq dl (append dl (list (cons 10 p) (cons 42 (- (abs bulge)))))))
   (if (entmake dl) (entlast)))
 
 ;; ---------------------------------------------------------------- live-value preflight

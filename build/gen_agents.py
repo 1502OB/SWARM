@@ -631,6 +631,14 @@ Read those; do not look for a scout manifest that was not listed.
      swl: helpers instead of writing your own (results: swl:result / swl:san - one line, no newlines; boxes, overlap,
      crossing-aware clash swl:clash, viewport projection swl:vp / swl:ms->ps / swl:ps->ms, clockwise clouds
      swl:cloudpts / swl:entmake-cloud / swl:cloud-check, live-value preflight swl:preflight, tag spots swl:best-spot).
+     Cloud clash checks use the cloud's ARC envelope (vertex box + sagitta), not the clouded text's box: in dense notes
+     (row pitch ~0.15 in) single-line clouds need small arcs (chord ~0.07 in) or the arcs cut the rows above and
+     below (Q22, 22-001 P0.01 notes 25/28). Clouds bulge OUTWARD: on clockwise vertices the bulge is NEGATIVE
+     (-0.52); a positive bulge draws an inverted cloud (A52, PAD set). swl:entmake-cloud forces the sign; pass -0.52
+     to swl:cloud-check (it rejects any positive bulge); never copy +0.52 from an existing cloud without checking its
+     vertex order. Model-space reads with a layout active use (ssget "_X" (list ... (cons 410 "Model"))) and filter
+     coordinates in LISP: _W/_C/_F select only in the CURRENT space (A29). Attach/detach xrefs with ActiveX
+     (vla-AttachExternalReference / vla-Detach), never -XREF on the command line: every L: path has spaces (A27).
      Never redefine an swl: function. XREF / PDFATTACH / IMAGE attach and PUBLISH go through
      (swl:queue-command "<literal command>") in a separate <task-id>.attach.lsp, never (command ...). The argument
      must be ONE string literal (writer_guard refuses strcat'd/variable text): put path, page, insertion, scale and
@@ -652,7 +660,9 @@ Read those; do not look for a scout manifest that was not listed.
        If not, report "off-sheet: <handle>" and do not script it (A39, A50). Find the swarm folder with swl:swarm-dir.
      - Names: entget lists are ed*/data, enames e*/en*; pass (cdr (assoc -1 ed)) (A43, W7). First non-nil is
        (cond (x) (y)), never (setq v (or ...)) (A31, W6). Locals in one defun never differ only by case (ne/nE, A42);
-       functions are verbs, globals nouns (A28).
+       functions are verbs, globals nouns (A28). Never name a parameter, local, setq target or foreach variable
+       after an AutoLISP built-in in any case (mAx IS max, length, list, last, angle, distance, abs, min...): its value
+       shadows the built-in for every callee ("bad function: 1014.72"); declare every foreach variable local (A51).
      - Edit/done states: name values by meaning (planned-move vs current-offset, A44). Once the predecessor task's
        DWG is saved, dry-run with `lsp_dryrun.py <file> <TASK> --from-live "<L: dwg>"` so PLAN sees the current drawing, not the
        pre-run backup.
@@ -664,8 +674,8 @@ Read those; do not look for a scout manifest that was not listed.
      the orchestrator does not run them for you):
        `python {SWARM}/tools/lsp_lint.py <file>` -> 0 errors (a hook also checks every .lsp you write); treat W5/W6/W7
          as bugs;
-       `python {SWARM}/tools/lsp_collide.py <file> {SWARM}/library/acad/swarm_lib.lsp` -> no collisions and no
-         local-collisions;
+       `python {SWARM}/tools/lsp_collide.py <file> {SWARM}/library/acad/swarm_lib.lsp` -> no collisions, no
+         local-collisions and no subr-shadows (A51);
        `python {SKILLS_DIR}/autocad-api/scripts/acad_api_check.py --lsp <file> --with {SWARM}/library/acad/swarm_lib.lsp`
          -> 0 not found (autocad-api skill: references/core.md lists names that do NOT exist, e.g. fboundp, stringp,
          MText Explode);
@@ -1000,7 +1010,11 @@ anything in AutoCAD.
 - Tolerances: compare coordinates with a tolerance that matches the precision of the expected value (manifests store
   ~6 significant digits; a 1e-6 tolerance once failed 18 unmoved items). Record the tolerance you used.
 - AutoCAD clouds: compare positions using the VERTEX bbox (min/max of group 10 points); vla-GetBoundingBox includes
-  the arc bulge (~0.03-0.04 in) and will look out of tolerance.
+  the arc bulge (~0.03-0.04 in) and will look out of tolerance. For CLASHES it is the other way round: use the bulge
+  box (vertex box + arc sagitta), not the clouded text's box - a text-box check passed clouds whose arcs cut the
+  lines above and below (Q22); a cloud in dense notes is not PASS until a plotted/rendered crop shows it clear.
+  Check arc DIRECTION, not only the bulge value: clockwise vertices need negative bulges (arcs outside the vertex
+  box); "bulge == 0.52" passed a whole set of inverted clouds (A52).
 - Annotative objects: check the position at every annotation scale the item names, not only the current one.
 - Revit new elements: "exists" is not enough. Check each one is visible in every target view the item names
   (new FilteredElementCollector(doc, viewId) contains it; its workset is not hidden in that view; it lies inside the

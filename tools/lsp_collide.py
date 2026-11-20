@@ -3,10 +3,37 @@ AutoLISP symbols are case-insensitive: (setq M4:VPINFO ...) deletes function m4:
 Second check (LESSONS A42): inside one defun, parameters + locals (after "/") + setq targets that differ only in
 case (`ne` and `nE` are ONE symbol, so the "two" variables overwrite each other).
 Usage: python ~/swarm/tools/lsp_collide.py file.lsp [lib.lsp ...]
-Output: "<file> collisions: [...] | none" then "<file> local-collisions: [defun: a/A, ...] | none".
+Third check (LESSONS A51, 2026-11-20): a parameter, local, setq target or foreach variable whose name is an AutoLISP
+built-in in any case (`mAx` IS the SUBR MAX: its value shadows MAX for every callee -> "bad function: 1014.72").
+Built-in names come from the autocad-api skill (references/autolisp.json), with a short fallback list.
+Output: "<file> collisions: [...] | none", "<file> local-collisions: [defun: a/A, ...] | none", then
+"<file> subr-shadows: [defun: mAx(MAX), ...] | none" (top-level setq targets are reported under "<top>").
 2026-11-09: single-pass lexer (the first regex version stripped strings before comments, so an inch mark
 inside a comment swallowed the rest of the file and the check silently reported "none")."""
+import json
+import os
+import re
 import sys
+
+FALLBACK_SUBRS = ("abs angle append apply assoc atan atof atoi car cdr chr close cons cos distance entget entlast "
+                  "entnext eq equal eval exp expt fix float getvar handent inters itoa last length list load log "
+                  "max member min nth open polar print read rem reverse rtos set sin sqrt strcat strlen subst "
+                  "substr trans type ver").split()
+
+
+def subr_names():
+    """Lower-case AutoLISP built-in function names (autocad-api skill), or the fallback list."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    cands = [os.path.join(os.environ.get("CLAUDE_CONFIG_DIR", os.path.join(os.path.expanduser("~"), ".claude")),
+                          "skills", "autocad-api", "references", "autolisp.json"),
+             os.path.join(os.path.dirname(here), "claude", "skills", "autocad-api", "references", "autolisp.json")]
+    for c in cands:
+        try:
+            names = json.load(open(c, encoding="utf-8"))["names"]
+            return {k.lower() for k in names if re.fullmatch(r"[a-z][a-z0-9_\-]*", k.lower())}
+        except (OSError, ValueError, KeyError):
+            continue
+    return set(FALLBACK_SUBRS)
 
 
 def tokens(s):
@@ -134,6 +161,37 @@ def local_collisions(path):
     return out
 
 
+def subr_shadows(path, subrs=None):
+    """[(defun name or '<top>', name, BUILTIN), ...] for bound names that are AutoLISP built-ins in any case."""
+    subrs = subr_names() if subrs is None else subrs
+    t = tokens(open(path, encoding='utf-8', errors='ignore').read())
+    out, seen, owner_end, owner = [], set(), [], []
+    i = 0
+    while i < len(t):
+        while owner_end and i > owner_end[-1]:
+            owner_end.pop(); owner.pop()
+        cur = owner[-1] if owner else '<top>'
+        bound = []
+        if t[i] == '(' and i + 3 < len(t) and t[i + 1].lower() in ('defun', 'defun-q') and t[i + 3] == '(':
+            cur = t[i + 2]
+            owner.append(cur); owner_end.append(form_end(t, i))
+            k = i + 4
+            while k < len(t) and t[k] != ')':
+                if t[k] != '/':
+                    bound.append(t[k])
+                k += 1
+        elif t[i] == '(' and i + 2 < len(t) and t[i + 1].lower() == 'setq':
+            bound = setq_targets(t, i)[0]
+        elif t[i] == '(' and i + 2 < len(t) and t[i + 1].lower() in ('foreach', 'vlax-for') and t[i + 2] not in '()':
+            bound = [t[i + 2]]
+        for nm in bound:
+            if nm.lower() in subrs and (cur, nm.lower()) not in seen:
+                seen.add((cur, nm.lower()))
+                out.append((cur, nm, nm.upper()))
+        i += 1
+    return out
+
+
 if __name__ == '__main__':
     main = sys.argv[1]
     d, s = scan(main)
@@ -145,3 +203,5 @@ if __name__ == '__main__':
     loc = local_collisions(main)
     print(main, 'local-collisions:',
           '[' + ', '.join(f"{n}: {'/'.join(g)}" for n, gs in loc for g in gs) + ']' if loc else 'none')
+    sh = subr_shadows(main)
+    print(main, 'subr-shadows:', '[' + ', '.join(f"{o}: {n}({b})" for o, n, b in sh) + ']' if sh else 'none')

@@ -103,3 +103,11 @@ Read before writing or fixing a script. New lessons go here, plus a one-line poi
 - A48 Shared JSON logs are never rewritten: each agent writes <log>.attemptN.ops.json and the orchestrator merges (tools/merge_ops.py).
 - A49 Drawing geometry contradicts a note (10 meters drawn vs "20 IN 2 ROWS"): no script; report the counts and options.
 - A50 A layout with no floating viewport (only DXF 69 = 1) shows no model space: its model-space text is off-sheet (swl:floating-vps).
+
+## 23-082 PAD 2026-11-16 (PAD-R1-T1; swarm/LESSONS.md A51)
+
+- AutoLISP symbols are case-insensitive, so a local named `mAx` IS the built-in `MAX`: its value shadows MAX for every
+  function called while it is bound ("bad function: 1014.72"). Never name a parameter, local, setq target or foreach
+  variable after a built-in in any case (max, min, abs, list, length, last, angle, distance, type, read, ...), and
+  declare every foreach variable local. `tools/lsp_collide.py` reports these as `subr-shadows` (names from the
+  autocad-api skill's autolisp.json): treat any hit as a bug.

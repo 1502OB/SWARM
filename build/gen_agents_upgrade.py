@@ -221,7 +221,8 @@ vla- member and DXF code of the failing script: `python {SKILLS_DIR}/autocad-api
 --lsp <file> --with {SWARM}/library/acad/swarm_lib.lsp` (NOT FOUND / DOC-ONLY = the likely cause; list
 them in debug.json) and `python {TOOLS_DIR}/lsp_collide.py <file> {SWARM}/library/acad/swarm_lib.lsp`. Check the
 Mansfield patterns first (2026-11-09): a case collision between a function and a global or between two locals
-(ne/nE, lsp_collide "local-collisions", A28/A42); entget data passed as an ename (lint W7, A43); (setq v (or ...))
+(ne/nE, lsp_collide "local-collisions", A28/A42); a local named after a built-in in any case (mAx = MAX,
+lsp_collide "subr-shadows", A51: "bad function: <number>"); entget data passed as an ename (lint W7, A43); (setq v (or ...))
 returning T (W6, A31); a preflight that compares against the PLANNED value of an edit state (A44: reproduce with
 `lsp_dryrun.py <file> <TASK> --from-live "<dwg>"`); a c: command with no returned result (W5, A36). For .cs, compile the failing script first: `python {TOOLS_DIR}/revit_cs_check.py <file.cs>` reproduces a bridge
 "Code compilation error" exactly (the bridge's "Line N" is script line N - 13; the output gives live_line) and proves

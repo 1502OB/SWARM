@@ -141,7 +141,8 @@ write("xsheet-checker", fm(
 4. Callouts: every detail/section/sheet reference (e.g. "3/P7.02", "SEE P-5.01") points to a sheet and detail that
    exist; keynote numbers point to existing keynote text.
 5. Sheet index vs the sheets in the set (page map) when the orchestrator has not run set_assemble.py index.
-6. Code basis: every edition/amendment cited on any sheet matches the brief's code basis.
+6. Code basis: every edition/amendment cited on any sheet matches the brief's code basis, including note blocks
+   and tables that are images only (read them on the render; Q23).
 7. Notes that contradict each other across sheets (materials, pipe material per size, insulation, slopes).
 
 ## Output

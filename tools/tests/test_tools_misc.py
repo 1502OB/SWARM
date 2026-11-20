@@ -30,7 +30,7 @@ def test_collide_param_vs_setq_and_output_lines():
     p = write_tmp('(defun f (Pt / x) (setq pt 1 x 2) x)\n(defun g ( / ) (setq G 1))')
     out = subprocess.run([sys.executable, str(TOOLS / "lsp_collide.py"), str(p)], capture_output=True, text=True).stdout
     lines = out.strip().splitlines()
-    assert len(lines) == 2, out
+    assert len(lines) == 3, out
     assert lines[0].endswith("collisions: ['g']"), lines[0]  # existing global defun-vs-setq check kept
     assert "local-collisions: [f: Pt/pt]" in lines[1], lines[1]
 
@@ -39,6 +39,24 @@ def test_collide_clean():
     p = write_tmp('(defun f (a / b) (setq b a) b)')
     out = subprocess.run([sys.executable, str(TOOLS / "lsp_collide.py"), str(p)], capture_output=True, text=True).stdout
     assert out.strip().splitlines()[1].endswith("local-collisions: none"), out
+
+
+# ---- lsp_collide: locals / setq / foreach vars that shadow an AutoLISP built-in (A51, PAD-R1-T1 mAx)
+def test_collide_subr_shadows():
+    p = write_tmp('(defun c:PAD-T1 ( / mAx pts e)\n (setq mAx (apply (quote max) pts))\n'
+                  ' (foreach Length pts (princ Length))\n (setq e (entlast)))\n'
+                  '(defun ok (a / b) (setq b a))\n(setq List 3)\n')
+    sh = lsp_collide.subr_shadows(str(p))
+    assert sh == [("c:PAD-T1", "mAx", "MAX"), ("c:PAD-T1", "Length", "LENGTH"), ("<top>", "List", "LIST")], sh
+    out = subprocess.run([sys.executable, str(TOOLS / "lsp_collide.py"), str(p)], capture_output=True, text=True).stdout
+    assert "subr-shadows: [c:PAD-T1: mAx(MAX)" in out.strip().splitlines()[2], out
+
+
+def test_collide_subr_clean_and_fallback():
+    p = write_tmp('(defun f (pt / ss n) (setq n (sslength ss)) (foreach x (list pt) x))')
+    assert lsp_collide.subr_shadows(str(p)) == []
+    assert lsp_collide.subr_shadows(str(p), set(lsp_collide.FALLBACK_SUBRS)) == []
+    assert "max" in lsp_collide.subr_names() and "sslength" in lsp_collide.subr_names()
 
 
 # ---- merge_ops
