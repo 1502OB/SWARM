@@ -527,9 +527,10 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
   briefs, acad-conventions scripting-lessons "23-082 PAD".
 - A52: swarm_lib swl:entmake-cloud always writes a NEGATIVE bulge (outward on clockwise vertices); swl:cloud-check
   rejects any positive bulge; 2 library tests added. scripter + verifier briefs (check arc direction, not value).
-  NOT run live: lsp_dryrun on this machine fails "File load canceled" for every .lsp (the committed library too),
-  probably AutoCAD 2027 SECURELOAD not trusting C:/Users/j/swarm - Jeremy to add it to TRUSTEDPATHS, then run
-  `python tools/lsp_dryrun.py library/acad/test_swarm_lib.lsp <scratch dwg> SWLTEST --run`.
+  lsp_dryrun had been failing "File load canceled" for every .lsp: AutoCAD 2027 TRUSTEDPATHS was empty (SECURELOAD
+  default 1). Set 2026-11-20 at Jeremy's request (HKCU AutoCAD R26.0 ACAD-A101:409, <<Unnamed Profile>>, Variables):
+  C:\Users\j\swarm\...;C:\Users\Jeremy\swarm\...;C:\Users\j\autocad-mcp\lisp-code. Edit only with AutoCAD closed.
+  Library test after: PLAN 37/37, RUN 34/35 incl. both A52 tests (the 1 fail = test drawing had no floating viewport).
 - A27 (xref via ActiveX), A29 (ssget _X + 410 for model space): scripter brief.
 - Q22 (cloud clash on the arc envelope, small arcs in dense notes, render before PASS): scripter + verifier.
   Q23 (code editions in image-only note blocks): sheet-reviewer, code-reviewer, xsheet-checker.
