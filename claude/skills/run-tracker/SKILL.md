@@ -27,6 +27,15 @@ Edit the local status JSON, set `updated` to now (ISO UTC), then `ArtifactData s
 Republish only to change the template itself (same file_path; omit `capabilities` so they carry forward).
 Before the final sync, `ArtifactData list collection:"fixes"` to see which hand fixes Jeremy has ticked, and say so.
 
+## Mistakes and errors log
+Log EVERY failure as it happens (not at the end): script/compile error, rollback, NO_GO, timeout, crash, stuck bridge,
+wrong assumption, rework, lost work, a check that was wrong, a guard/hook block that cost time. One entry each in
+`errors` (oldest first): `{"at": "11-19 18:40", "kind": "error|crash|timeout|rework|process", "what": "...",
+"impact": "what it cost (time, lost work, risk)", "fix": "what we did", "lesson": "R87" or "pending", "s": "open|fixed|rolled"}`.
+`s`: open = not resolved; fixed = resolved this run; rolled = its lesson is in the agents (set after the roll-in).
+At the end of the run the log is the input for the retro and the lessons roll-in: every entry gets a lesson id or
+"no lesson (one-off)", and entries become `rolled` when the roll-in is committed.
+
 ## Questions (blockers Jeremy must answer)
 When a step is blocked on Jeremy's decision, add it to `questions` (and mark the step `wait` with a note) as well as
 asking in chat. The page shows a highlighted QUESTIONS panel and a count in the status bar; Jeremy clicks an option

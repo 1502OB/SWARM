@@ -107,6 +107,17 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
 .q.ans .qt::after{content:"  answered";font-family:var(--mono);font-size:10.5px;color:var(--ok);font-weight:400}
 .q .qs2{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 #qbadge{color:var(--warn);font-weight:700}
+.errwrap{overflow-x:auto}
+table.err{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
+table.err th{font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+table.err td{padding:6px;border-bottom:1px dashed var(--line);vertical-align:top}
+table.err td.tm{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+table.err td.ls{font-family:var(--mono);font-size:11px;color:var(--info);white-space:nowrap}
+table.err .sev{font-family:var(--mono);font-size:10px;font-weight:700;padding:1px 5px;border-radius:2px;white-space:nowrap}
+table.err .sev.open{color:var(--hot);border:1px solid var(--hot)}
+table.err .sev.fixed{color:var(--ok);border:1px solid rgba(61,220,132,.5)}
+table.err .sev.rolled{color:var(--info);border:1px solid rgba(79,179,255,.5)}
+table.err tr.k-crash td:nth-child(2){color:var(--hot)}
 .foot{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:right}
 </style>
 
@@ -151,6 +162,11 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
       </section>
     </div>
   </div>
+  <section class="panel" id="errpanel" hidden>
+    <div class="ph"><b>MISTAKES &amp; ERRORS</b><span id="errcount"></span></div>
+    <div class="pb"><div class="errwrap"><table class="err"><thead><tr><th>Time</th><th>What happened</th><th>Impact</th><th>Fix</th><th>Lesson</th><th></th></tr></thead><tbody id="errbody"></tbody></table></div>
+      <p class="fixnote">Every failure, rollback, timeout, crash and wrong assumption in this run. Rolled into lessons at the end.</p></div>
+  </section>
   <p class="foot" id="stamp"></p>
 </div>
 
@@ -210,6 +226,12 @@ ul.fix li.done b{color:var(--ok)} ul.fix li.done span{text-decoration:line-throu
         fixCol.doc(f.id).set({done:cb.checked,at:new Date().toISOString()}).then(function(){$("fixnote").textContent="Saved.";},function(e){$("fixnote").textContent="That tick was not saved ("+((e&&e.code)||"error")+"). Tick it again.";});});});
     if(!(v.fixes||[]).length){var e=el("li","empty","None so far.");e.style.border="0";e.style.background="none";ul.appendChild(e);}
     paintFixes();
+    var errs=v.errors||[];$("errpanel").hidden=!errs.length;var eb=$("errbody");eb.textContent="";var openE=0;
+    errs.forEach(function(e){var st=e.s||"open";if(st==="open")openE++;var tr=el("tr",e.kind?"k-"+e.kind:null);
+      tr.appendChild(el("td","tm",e.at||""));tr.appendChild(el("td",null,e.what||""));tr.appendChild(el("td",null,e.impact||""));
+      tr.appendChild(el("td",null,e.fix||""));tr.appendChild(el("td","ls",e.lesson||"pending"));
+      var c=el("td");c.appendChild(el("span","sev "+st,{open:"OPEN",fixed:"FIXED",rolled:"IN AGENTS"}[st]||st.toUpperCase()));tr.appendChild(c);eb.appendChild(tr);});
+    $("errcount").textContent=errs.length?errs.length+" logged · "+openE+" open":"";
     renderQs(v);
   }
 
