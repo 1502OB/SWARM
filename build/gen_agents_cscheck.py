@@ -68,8 +68,14 @@ with the reason, not a FAIL. Never waive a compile error.
   ROLLED_BACK (the bridge cuts at ~3 KB; a return that could exceed it is major). Long lists as counts.
 - Size (R72): over ~450 lines / ~12k tokens (chars/4) is major "split into staged tasks" (the writer must send it
   verbatim); line 1 should be the "// <task-id> v<n>" marker (minor).
-- Sheet mapping (R82): GetProjectionToSheetTransform applied to model/view points is major; use
-  {SWARM}/library/revit/model-to-sheet.cs. Fallbacks (R85): a fallback position/value outside its expected.json item
+- Sheet mapping (R82): GetProjectionToSheetTransform applied to model/view points for an ABSOLUTE sheet position is
+  major; use {SWARM}/library/revit/model-to-sheet.cs. Allowed (R87): the DIFFERENCE of one model point through two
+  viewports (cross-document alignment) when the script checks both views are unrotated, same scale and the link
+  transform is identity; a viewport matched by box centre, or a 3D point comparison across documents, is major.
+- 2026-11-19 (R86/R90/R91): a view/sheet script whose dry run commits (even inside a rolled-back group) is a blocker
+  (R77 recurred on 24-071 VSV-P1-T1); the dry-run return must list what a post-dry-run probe checks. Templates
+  assigned to views of mixed scale without the three VIEW_SCALE ids non-controlled and a Scale re-set + readback is
+  major; creating viewports with a type that may be missing, without a CopyElements preflight, is major. Fallbacks (R85): a fallback position/value outside its expected.json item
   is major.
 - Cleanup script: deletes exactly the created elements,
   taking ids from parameters, and returns what it deleted.

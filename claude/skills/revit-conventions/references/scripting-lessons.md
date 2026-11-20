@@ -212,3 +212,44 @@ Scouting and bridge
   sheet and every view on the named sheets (R83). An index from another document is not evidence (O34).
 - The bridge picked a stale mcp-port.txt (2026 file, 8081) over the live Revit 2024 (8080): confirm Document.Title and
   version on the first call (O37).
+
+## Village 24-071 VSV lessons (2026-11-19; swarm/LESSONS.md R76/R77/R82/R86-R92, O39; run 20261119-VSV)
+Dry runs
+- A commit-then-rollback dry run of a view/sheet script persisted AGAIN (VSV-P1-T1 attempt 3: title block types, sheet
+  names, key plans, a deleted TB and viewport centres stayed, though the return said "group rolled back"); the ENL dry
+  runs rolled back. View/sheet/viewport/name edits: read-only dry run. Writers probe read-only after EVERY dry run
+  (counts of created things, one changed value per kind) and stop on any leftover (R77/R86).
+Cross-document sheet placement (arch sheet -> plumbing sheet)
+- The viewport box centre is not a match: the box includes annotation crop and annotations outside the crop, so its
+  size differs between documents (S-P1.01 was 43 in off with annotation crop off).
+- Align by a model point: P = source view crop centre (world XY);
+  delta = srcVp.GetProjectionToSheetTransform().OfPoint(P) - tgtVp.GetProjectionToSheetTransform().OfPoint(P), sheet XY;
+  tgtVp.SetBoxCenter(current + delta) keeping Z; Regenerate; read back <= 0.01 in (fatal > 0.05). Verified 0.0005 in on
+  15 + 14 sheets, plots matched (R87).
+- Reconciling with R82: GetProjectionToSheetTransform takes projection-space points; an ABSOLUTE sheet position from a
+  raw model point was nonsense on 25-061 WF (~147, 209 ft): use library/revit/model-to-sheet.cs for those. The
+  DIFFERENCE of the same model point through two viewports is valid when both are unrotated plan views at the same
+  scale and the link transform is identity (check all three; any projection-space offset cancels).
+- Compare points across documents in XY only: GetBoxCenter Z differs between documents (attempts 1-2 rolled back on a
+  3D DistanceTo of equal XY points).
+- View titles: after alignment set LabelLineLength = source, copy LabelOffset, then correct LabelOffset by the
+  sheet-XY difference of the GetLabelOutline() lower-left corners (up to 3 passes). LabelOffset is relative to the
+  box, so a plain copy lands wrong (R76).
+Templates, types, source model
+- A copied view template used by views of several scales must list VIEW_SCALE, VIEW_SCALE_PULLDOWN_IMPERIAL and
+  VIEW_SCALE_PULLDOWN_METRIC in SetNonControlledTemplateParameterIds; set View.Scale AFTER assigning the template and
+  read it back (B-P6.21 restroom came out 1:48 instead of 1:24) (R90).
+- Viewport types (and their title family) missing in the target: ElementTransformUtils.CopyElements from the source
+  document in preflight, after a name pre-check (an existing name raises a duplicate-types dialog) (R91).
+- Reading the arch model: when the detached arch document is not open, fall back to the loaded link
+  (RevitLinkInstance.GetLinkDocument), after checking the link transform is identity; report which was used (R92;
+  written into VSV-ENL-T1.cs attempt 6, ran from the link).
+Exports, warnings, bridge
+- Visual PDFs: a read-only Document.Export script (scripts/VSV-ENL-PDF.cs: PDFExportOptions per sheet, Combine, file
+  named by sheet number with '&'/spaces replaced, File.Exists + size in the return), run alone. batch_export run twice
+  at once wrote nothing, then stuck on a stale reply, and Revit crashed while a verifier queried in parallel (O39, R65).
+- get_warnings caps at 500: equal counts at the cap prove nothing; compare ids/descriptions (R52).
+- After a send_code timeout replies can lag one call: put a marker in the first return token and check it; confirm
+  state with Document.IsModified or an id count (R88). Scope queries to the task's ids: a model-wide callout-parent
+  scan timed out and jammed the queue for later calls (R89).
+- Revit's 'Changes Not Synchronized with Central' reminder blocks the bridge mid-run; Cancel lets it continue (O23).

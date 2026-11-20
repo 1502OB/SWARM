@@ -181,7 +181,7 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
   letter quotes against the new plot (LESSONS P7, Q21). Embedded-Excel calcs have no text layer: read the render.
 
 ## Run protocol (swarm-upgrade-handoff.md, Jeremy 2026-11-04; applies on top of the Pipeline above)
-1. Generate a run id (YYYYMMDD-HHMM). All manifests for this run reference it; pass it in every agent prompt.
+1. Generate a run id (YYYYMMDD-HHMM, or YYYYMMDD-<WORD> such as 20261119-VSV). All manifests for this run reference it; pass it in every agent prompt.
 2. Run snapshot-taker. Do not proceed without a snapshot file (snapshots/<run-id>.snapshot.json). If it reports a
    backup "locked" or "cloud", tell Jeremy so he can save-as manually before any write.
 3. After every writer task completes, set "invalidated": true in cache/revit-index.json or cache/acad-index.json as
@@ -189,7 +189,8 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
 4. When a writer reports failure, hand the write.json and the failing script to script-debugger. Allow at most 2
    debug cycles per task; if both fail, one scripter run on opus (model override), then mark the task FAIL and move
    on (FAILED SCRIPT above).
-5. Sheet exports for the visual check (fixed 2026-11-04): Revit, visual-verifier exports with batch_export itself.
+5. Sheet exports for the visual check (fixed 2026-11-04): Revit, visual-verifier exports with batch_export itself
+   (since 2026-11-19 prefer a revit-writer Document.Export script and give the visual-verifier the PDFs: item 21a).
    AutoCAD, first write the DSD with `python tools/acad_dsd.py "<dwg>" "<layout>" "visual/<run-id>/<task-id>/<task-id>.pdf"
    "visual/<run-id>/<task-id>/<task-id>.dsd"`, then run acad-writer on a task "<task-id>-PUB" (operation publish-sheet,
    assigned_agent acad-writer; it loads tools/swarm_publish.lsp and calls (swarm:publish dsd pdf), never saves).
@@ -332,3 +333,29 @@ Start by confirming both bridges respond, listing what is in inputs/, and asking
        folder's junction alias (C:/Users/Jeremy -> C:/Users/j) is accepted; still quote every path.
     g. J13-J15: run independent work in parallel; never offer a condensate pump; when the letter is FINAL tell
        response-writer "FINAL": no 'pending' in the letter, open items in its claims_checklist.md.
+21. 24-071 Village sheet setup, run 20261119-VSV (2026-11-19, LESSONS O39-O42, R76/R77/R86-R92, O23, O26, R52, Q27):
+    a. ONE Revit job at a time, exports included (O39): never run an export alongside any other Revit call (two
+       batch_exports at once wrote nothing; batch_export then stuck, and Revit crashed with a verifier querying in
+       parallel, losing 14 unsynced sheets). Visual PDFs: a revit-writer runs a read-only Document.Export script
+       (scripts/VSV-ENL-PDF.cs pattern: one PDF per sheet named by sheet number, no '&') with its own task.json; then
+       visual-verifiers work from the PDFs on disk only (several in parallel is fine) and get sheet ids or PDF paths in
+       the brief (Q27); the verifier runs after the export, alone. This replaces item 5's batch_export for Revit.
+    b. Dry runs (R77/R86): after every dry run the writer probes read-only that nothing stayed; on "ROLLBACK:" stop
+       and send a reconcile scout. Never tell a writer to skip a dry run on a view/sheet task unless Jeremy said so.
+    c. After a send_code timeout (R88): replies can lag one call; check the reply carries the call's marker and confirm
+       state with Document.IsModified / an id count before acting. Brief verifiers and scouts with the task's ids
+       only; a model-wide scan (all views for callout parents) jams the queue (R89).
+    d. DIALOG CHECK (O23): from Bash run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+       tools/dialog_check.ps1` (pwsh is blocked). Revit's own 'Changes Not Synchronized with Central' reminder can
+       block a long run: Jeremy clicks Cancel, then reconcile read-only before re-running.
+    e. Hand fixes (O40): after Jeremy reports or ticks hand fixes, remind him to Synchronize (or run a revit-ops sync
+       with his OK) before any more bridge work: unsynced hand edits are lost if Revit later closes without saving.
+    f. task.json for EVERY task (O26), export-only and read-only ones too (writers refuse without it; scripters cannot
+       write it). Ids <prefix>-R<n>-T<m> or <prefix>-<WORD>-T<n> (VSV-ENL-T1); brief the scripter with the final id.
+    g. Tooling (O41): the WindowsApps `python` alias is blocked: use the full interpreter path
+       (~/AppData/Local/Python/pythoncore-3.14-64/python.exe). Run ids are YYYYMMDD-HHMM or YYYYMMDD-<WORD>
+       (snapshot_backup.py accepts both since 11-19). Publish artifacts from the real swarm-data path, never through
+       the swarm/<project> junction (an approval fires).
+    h. Live tooling (O42): after a roll-in commit run `python build/gen_all.py` and `python build/sync_claude.py
+       install`; before any `sync_claude.py pull` run `status` and pull only files you edited in ~/.claude (an 11-19
+       pull put stale 11-09 hooks over the repo's 11-17 ones; VSV ran on agents generated 11-12).

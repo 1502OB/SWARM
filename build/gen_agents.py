@@ -144,7 +144,13 @@ agent calls it, so only ONE agent of any kind talks to Revit at a time (the orch
 task id in the return text of every check you run, so a crossed reply is recognisable. A long call (sync, big write)
 can hold the bridge for ~10 min and an open Revit dialog blocks it: if a trivial call times out, stop and report
 "revit busy" (Jeremy may need to close a dialog); never retry in a loop.
-Never loop over every parameter of every element (a ~100k-element scan crashed Revit): query by category or filter."""
+Never loop over every parameter of every element (a ~100k-element scan crashed Revit): query by category or filter.
+One Revit job at a time INCLUDES exports (LESSONS O39, 24-071 VSV 2026-11-19): two batch_exports at once clashed, and
+an export with a query alongside ended in a Revit crash that lost unsynced sheets. Never call Revit while an export
+runs. Scope queries to the task's ids (R89): a model-wide scan (e.g. all views to find callout parents) times out and
+jams the send_code queue for every later call; mark such a check "not checked: heavy scan". After any timeout,
+replies can lag one call (R88): start every send_code return with your task id + step marker, check that the reply
+you got carries it, and confirm state with a cheap read (Document.IsModified, an id count) instead of trusting it."""
 REVIT_CODE_READ = ("mcp__revit-mcp__send_code_to_revit", "revit_readonly_code_guard.py")
 REVIT_SCOUT_HOOK = hooks(PROJECT_GUARD, REVIT_CODE_READ)
 
@@ -188,7 +194,7 @@ def write(name, text):
 
 
 # ---- Hardening rules (swarm-upgrade-handoff.md, Jeremy 2026-11-04) ----
-RUN_ID_NOTE = ("The orchestrator gives you the run id (YYYYMMDD-HHMM) with every task; every manifest you write for "
+RUN_ID_NOTE = ("The orchestrator gives you the run id (YYYYMMDD-HHMM or YYYYMMDD-<WORD>, e.g. 20261119-VSV) with every task; every manifest you write for "
                "the run carries it.")
 
 
@@ -372,6 +378,11 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
   sheet and every view on the named sheets before saying text "lives in the DWG/PDF" (WF-GEN reported 0 of 4).
 - Report names exactly as the model has them (R64/R71): parameter names (case), line styles with brackets
   ('<Thin Lines>'), the revision tag family AND type name.
+- Scoped queries (2026-11-19, R89): query by the ids/sheets the task names; never collect every view or element to
+  answer one question (a callout-parent scan over all views jammed the bridge). Sheet number -> id lookups for the
+  visual-verifier come from you (Q27). Report a get_warnings count of 500 as "capped" with the ids/descriptions (R52).
+- State probe (R77/R86): after a dry run the orchestrator may ask whether anything stayed: count what the task creates
+  and read the changed values it lists, and report each as "as baseline" or "changed".
 
 {harden_scout("revit")}
 {COMMON}
@@ -519,6 +530,33 @@ Read those; do not look for a scout manifest that was not listed.
        from Level), not MoveElement; find the sign live and check connector Z after Regenerate.
      - expected.json (R85): pre-existing counts come from the scout baseline (clouds per sheet over all revisions);
        every fallback position/value the script can take lies inside the matching expected item.
+     2026-11-19 rules (LESSONS R76/R77/R82/R86-R92, 24-071 VSV sheet setup; details in scripting-lessons):
+     - Dry runs (R77/R86): view/sheet/viewport/title-block/name edits get a READ-ONLY dry run, no exceptions (VSV-P1-T1
+       attempt 3's commit-then-rollback left TB types, names, key plans, a deleted TB and moved viewports live).
+       Return the counts/values a post-dry-run probe needs (what the task creates and the first changed value per kind)
+       so the writer can prove nothing stayed.
+     - Matching another document's viewport (R87): never by box centre (box size includes annotation crop/extents;
+       S-P1.01 was 43 in off). P = source view crop centre (world XY); delta = srcVp.GetProjectionToSheetTransform()
+       .OfPoint(P) - tgtVp.GetProjectionToSheetTransform().OfPoint(P) (sheet XY); SetBoxCenter(current + delta, keep
+       Z); read back <= 0.01 in, fatal > 0.05. Only as a DIFFERENCE between two unrotated same-scale plan views with
+       the link at identity (check); absolute sheet positions still use {LIBRARY}/revit/model-to-sheet.cs (R82).
+       Compare points across documents in XY only (GetBoxCenter Z differs; a 3D DistanceTo rolled back P1-T1).
+     - View titles (R76): after alignment set LabelLineLength = source, copy LabelOffset, then correct it by the
+       sheet-XY difference of the GetLabelOutline() lower-left corners (up to 3 passes): LabelOffset is relative to
+       the box, so a plain copy is wrong.
+     - Templates and scale (R90): a copied template used by views of different scales lists VIEW_SCALE,
+       VIEW_SCALE_PULLDOWN_IMPERIAL and VIEW_SCALE_PULLDOWN_METRIC as non-controlled; set View.Scale AFTER assigning
+       the template and read it back (B-P6.21 came out 1:48, not 1:24).
+     - Viewport types (R91): copy missing viewport types (and their title family) from the source document with
+       ElementTransformUtils.CopyElements in preflight, after a name pre-check (a duplicate name raises a dialog);
+       never keep another type silently.
+     - Source model (R92): when the detached arch document is not open, fall back to the loaded link
+       (RevitLinkInstance.GetLinkDocument, identity transform checked) and say which one was used.
+     - PDF exports for visual checks (O39/R65): a read-only Document.Export script like {SCRIPTS}/VSV-ENL-PDF.cs (one
+       PDFExportOptions export per sheet, file named by sheet number with '&' and spaces replaced, File.Exists + size
+       in the return); never batch_export.
+     - Warnings (R52): get_warnings caps at 500; when an expected item depends on new warnings, name them so the
+       verifier compares ids/descriptions, not counts.
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
    - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
@@ -718,6 +756,18 @@ Load the `revit-conventions` skill first.
   "failed" with error "ROLLBACK:", and run nothing else (the orchestrator sends a reconcile scout).
 - Cascade deletes (R75): pipe/fitting centerline sub-elements (OST_PipeCurvesCenterLine / OST_PipeFittingCenterLine)
   dependent on a target are expected; any other unnamed cascade id is NO_GO.
+- Post-dry-run probe (2026-11-19, LESSONS R77/R86): right after EVERY dry run, one read-only call (labelled with your
+  task id) that counts the things the task creates and reads one changed value per kind (sheet names, TB types,
+  viewport centres, new view/sheet ids from the dry-run report). Anything that stayed = status "failed", error
+  "ROLLBACK: <what stayed>", no real run, no cleanup; the orchestrator decides (24-071 VSV-P1-T1 attempt 3 said
+  "group rolled back" and 15 sheets had changed). A script with no dry run is run only on the orchestrator's explicit
+  instruction quoting Jeremy, and you say so in write.log.md.
+- Reply identity (R88): after any timeout, check every reply answers the call you made (your marker / first token)
+  and confirm state with a cheap read (Document.IsModified, the created ids) before logging success.
+- Template scale (R90): when a script assigns templates to views of mixed scale, compare each view's Scale in the
+  dry-run readback with expected.json; a scale the template overrode is NO_GO.
+- Exports (O39): an export task (e.g. a VSV-ENL-PDF.cs-type script) has its own task.json like any other; run it
+  alone (no other agent on Revit), and report each file's existence and size from the script's return.
 - {REVIT_SERIAL}
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", REVIT_SAVE_RULE)}
@@ -900,6 +950,11 @@ anything in AutoCAD.
   (right - 0.17 in, top + 0.08 in) paper (tolerance 0.02 in), and that the cloud and tag box touch no other cloud.
   View rotation: check View.RightDirection, not the crop box.
 - Text found by search: match by handle/location, not by short strings ("4DFU" also occurs in fixture tags).
+- 2026-11-19 (24-071 VSV): scope every query to the task's ids and sheets (R89); a check that needs a model-wide
+  scan (callout parents over all views) is null "not checked: heavy scan". You run after any export, alone (O39).
+  At the get_warnings cap (500) equal counts prove nothing: compare warning ids/descriptions with the writer's
+  pre-run list (R52). Cross-document positions are compared in sheet XY only (R87); viewport alignment is the
+  difference of one model point through both viewports' GetProjectionToSheetTransform, tolerance 0.01 in.
 - Pipe system types (LESSONS R60/R73): after any retype, check the system type of the NEIGHBOURING connected pipes
   and the main as well as the retyped ones (25-076: one SetSystemType turned the building drain into VENT, tags read
   '4" V (0 FU)'). A per-pipe type that reverted is a FAIL.

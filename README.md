@@ -41,3 +41,6 @@ Agents regenerate from `build/` (`gen_all.py`); hooks and skills are copied file
 - Edited a hook or skill in `~/.claude`: `python build\sync_claude.py pull`, then commit and push.
 - Pulled changes from GitHub: `python build\sync_claude.py install` (backs up anything it overwrites to `build\backup_claude_*`).
 - `python build\sync_claude.py status` lists anything that differs. The script never deletes files.
+- Run `status` before every `pull`: `pull` copies every differing file from `~/.claude`, so a stale `~/.claude` (no
+  `install` after the last commit) overwrites newer repo files (2026-11-19, LESSONS O42). After a roll-in commit run
+  both `gen_all.py` and `sync_claude.py install`.

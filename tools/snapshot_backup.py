@@ -21,8 +21,9 @@ CLOUD = re.compile(r"^(BIM ?360|Autodesk Docs|cloud)[:/]", re.IGNORECASE)
 
 
 def main():
-    if len(sys.argv) < 3 or not re.fullmatch(r"\d{8}-\d{4}", sys.argv[1]):
-        print('usage: snapshot_backup.py <run-id YYYYMMDD-HHMM> "<file>" ["<file>" ...]')
+    # run id YYYYMMDD-HHMM or YYYYMMDD-<WORD> (e.g. 20261119-VSV; LESSONS O41, 2026-11-19)
+    if len(sys.argv) < 3 or not re.fullmatch(r"\d{8}-[A-Za-z0-9]{2,16}", sys.argv[1]):
+        print('usage: snapshot_backup.py <run-id YYYYMMDD-HHMM|YYYYMMDD-WORD> "<file>" ["<file>" ...]')
         sys.exit(2)
     run_id, sources = sys.argv[1], sys.argv[2:]
     dest = BACKUPS / run_id

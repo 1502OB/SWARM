@@ -34,6 +34,13 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
 - An index (cache/revit-index.json) from another document is not evidence; rebuild it (LESSONS O34).
 - Keep a script under ~450 lines with its return tail-first and <= 2.3 KB (R59/R72); view/sheet/annotation dry runs
   are read-only, and commit-then-rollback dry runs re-read the model after RollBack (R77).
+- After EVERY dry run the writer probes read-only that nothing stayed (counts of what the task creates, one changed
+  value per kind): a view/sheet dry run persisted again on 24-071 VSV-P1-T1 (R77/R86, 2026-11-19).
+- Matching viewports across documents: align by one model point through both viewports' GetProjectionToSheetTransform
+  (a difference; never box centres), titles by GetLabelOutline corners, all comparisons in XY (R87/R76; details in
+  scripting-lessons "Village 24-071 VSV").
+- One Revit job at a time, exports included; visual PDFs from a read-only Document.Export script, not batch_export;
+  scoped queries only, no model-wide scans; after a timeout check each reply is the one you asked for (O39, R88, R89).
 
 ## Revision clouds via the API
 - Draw the boundary loop **CLOCKWISE**: bottom-left → top-left → top-right → bottom-right → back to bottom-left.
@@ -58,7 +65,8 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
 - A cloud and its tag must not touch or overlap another cloud, and must not cut a text line or tag. A cloud on a schedule row is
   inset by the arc sagitta so its arcs stay inside the row band; the tag is also tested against in-viewport text,
   existing tags and the sheet/title-block border lines (R84). Map model/view points to the sheet with
-  swarm/library/revit/model-to-sheet.cs, never GetProjectionToSheetTransform (R82). Grow the
+  swarm/library/revit/model-to-sheet.cs, never GetProjectionToSheetTransform for an absolute position (R82; its
+  difference between two viewports is fine for alignment, R87). Grow the
   cloud to enclose the text, or merge touching clouds into one rectilinear outline cloud with one delta.
   Cloud only the changed items.
 - Rotated views: rotate a plan view by rotating its crop region element (setting View.CropBox with a rotated
