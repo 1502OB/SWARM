@@ -21,7 +21,6 @@ TOOLS_JSON = json.loads(Path(SWARM, "tools.json").read_text(encoding="utf-8"))
 REVIT_READ = TOOLS_JSON["revit_read"]
 ACAD_READ = TOOLS_JSON["acad_read"]
 EGNYTE = TOOLS_JSON["egnyte_read"] + TOOLS_JSON["egnyte_write"]
-EXPORT = TOOLS_JSON["revit_export_sheet"]
 SEND_CODE = "mcp__revit-mcp__send_code_to_revit"
 TOOLS_DIR = f"{SWARM}/tools"
 LEDGER = f"{SWARM}/ledger"
@@ -79,53 +78,27 @@ AutoCAD: {ACAD_READ_OPS}
 # ---------------------------------------------------------------------------------------------------------------
 write("visual-verifier", fm(
     "visual-verifier",
-    "Independent visual check after a write: exports the affected sheet, crops the changed region at 200 DPI (side by side with the before crop when one exists) and looks for overlaps, off-sheet tags, inverted cloud arcs, missing or duplicated elements. Writes <task-id>.visual.json. Has not seen the work.",
-    [EXPORT] + ACAD_READ + ["Read", "Write", "Bash", "Glob", "ToolSearch"], "sonnet",
-    hooks(PROJECT_GUARD, ACAD_GUARD, bash("visual-verifier"))) + f"""You are visual-verifier. You have not seen the work and must not look for it (no scripts, no write logs).
-The orchestrator runs you BEFORE verifier, so verifier can combine your result with its API check.
+    "Independent offline visual check of exported sheet PDFs. Crops changed regions and checks overlaps, off-sheet tags, clouds, missing items and duplicates.",
+    ["Read", "Write", "Bash"], "sonnet",
+    hooks(bash("visual-verifier"))) + f"""You are visual-verifier. Work from the exact PDFs in your brief. You have not seen
+the work and must not read scripts or write logs. For geometry tasks the orchestrator runs you before the
+API verifier. For light tasks your final batch plot supplies the visual result for the existing API checks.
 
 Two modes (2026-11-06, checks scaled to the change):
 - per task (geometry tasks: clouds, tags, moves, piping, viewports): the steps below, one <task-id>.visual.json each;
 - batch (light text/parameter tasks, once at the end of the batch): the orchestrator gives the final plot set and the
-  light task ids per sheet; export/crop each sheet's changed text once and write {MAN}/<run-id>.batch.visual.json:
+  light task ids per sheet; crop each sheet's changed text once and write {MAN}/<run-id>.batch.visual.json:
   {{"run_id","status":"PASS|FAIL|unavailable","sheets":[{{"sheet","tasks":[...],"status","reason","crops":[...]}}]}}.
 For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status "success" (read only that field):
-1. Export the affected sheet(s) to PDF after the write.
-   - Revit, PDFs given (2026-11-19, LESSONS O39): when the orchestrator gives you a PDF folder (a revit-writer exported
-     it with a Document.Export script such as {SWARM}/scripts/VSV-ENL-PDF.cs, one <sheet number>.pdf per sheet), make
-     NO Revit call: work from those files only, so several visual-verifiers can run in parallel. Never export while
-     any other agent may be calling Revit: two batch_exports at once wrote nothing, then batch_export stuck on a stale
-     reply and Revit crashed. The brief gives sheet ids (or PDFs): you have no number -> id lookup (Q27); if neither
-     is given, ask; never guess an id.
-     Since 2026-11-20 (26021 ECM, LESSONS O39/R65) PDFs are always given for Revit: batch_export returned the previous
-     export's path three times even on an idle bridge. If none are given, write "unavailable" and ask the
-     orchestrator for a Document.Export script run (scripts/ECM-D2-T1.cs); use the fallback below only when the
-     orchestrator explicitly tells you to. Document.Export never overwrites (a re-export lands as <name>-1.pdf): use
-     the newest file for the sheet and say which one.
-   - Revit, no PDFs given (fallback only on the orchestrator's explicit instruction): {EXPORT} with format "PDF", the sheet id(s), paperSize "A0" (the largest the tool offers) and
-     exportPath {SWARM}/visual/<run-id>/<task-id>/ (one folder per task: Revit names the file after the sheet
-     title, and a title with "&" cannot pass your Bash guard, so you pass the folder, never the file name).
-     The A0 page is 46.8 x 33.1 in and the sheet sits CENTRED AT 1:1 on it (Phase 6 test 2026-11-04: a 42x30
-     sheet had 2.4 in / 1.55 in margins). The sheet size is in the title block family name (e.g. "30x42") or the
-     snapshot; pass it as --sheet W,H (landscape width first) with --units in.
-     Export replies lag by one call and sometimes repeat a path (24-071, R44; even with one agent on the bridge):
-     never trust the reply. After each export, Glob the folder, and before using a PDF confirm its sheet number text
-     is on the page (visual_crop --find "<sheet no>"). Pass sheet ids, not view ids (a view id exports a bare view).
-     The sheet number(s) to plot come from task.json "change" ("sheets: ..."; LESSONS Q27). If only a view is named,
-     find the sheet that hosts it (Viewport.SheetId via the orchestrator's scout) or ask; a bare-view export is
-     "unavailable", not a FAIL.
-     If a folder is still empty after the next call, re-export that one sheet once.
-   - Full-set check (orchestrator asks at the end of a run, 24-071): export every sheet of the issued set, one folder
-     per sheet, confirm each sheet number, and report per sheet: background present, unexpected items (grids,
-     sprinklers, other buildings' links), blank or placeholder sheets, text over the title block. A visual check
-     covers only the sheets you exported; say which ones you did not.
-   - AutoCAD: you never plot or publish AutoCAD (plot_pdf fails on this bridge, LESSONS A6/A46; publishing stays
-     with acad-writer, D4). Before you run, the orchestrator has an acad-writer "publish-sheet" task publish the
-     layout (tools/acad_dsd.py + tools/swarm_publish.lsp) to {SWARM}/visual/<run-id>/<task-id>/<task-id>.pdf and
-     gives you that path: you only crop the PDF you are given. The page is the layout's own paper size at 1:1
-     (--units in, no --sheet). If there is no PDF, the task is "unavailable"; never try to make one.
+1. Use the exact PDF path, page and sheet number in your brief. Revit exports come from the writer's
+   Document.Export task in a fresh run/attempt folder. AutoCAD plots come from acad-writer. The orchestrator
+   checks the PDF path and sheet first with: `python {TOOLS_DIR}/visual_crop.py "<pdf>" <page> --verify-sheet "<sheet>"`.
+   If PDF text cannot confirm the number, inspect the title block yourself before using it. A missing PDF,
+   wrong sheet or bare-view export is "unavailable"; request a corrected plot. Never pick a file by timestamp.
+   For the full set, inspect each supplied sheet for background, unexpected links or grids, placeholders,
+   and text over title blocks. List any expected sheets absent from your brief.
 2. Crop the changed region with PyMuPDF via Bash, one command (the only Bash allowed):
-   `python {TOOLS_DIR}/visual_crop.py <export folder> <page> <x0,y0,x1,y1> <task-id> --units in [--sheet W,H]`
+   `python {TOOLS_DIR}/visual_crop.py "<exact PDF path>" <page> <x0,y0,x1,y1> <task-id> --units in [--sheet W,H]`
    (or --units frac with 0-1 page fractions when the sheet size is unknown; the JSON it prints gives the page size)
    or, to crop around a known string, `--find "<text>"` in place of the rectangle (see the script's docstring).
    visual_crop.py applies the page rotation (AutoCAD PDFs are often /Rotate 270: raw text boxes are unrotated, so
@@ -157,10 +130,7 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
    keyed-note tags must clear pipes, cleanouts/fixtures and other annotations.
 4. Write {MAN}/<task-id>.visual.json: {{"run_id","task_id","status":"PASS|FAIL|unavailable","reason":"plain
    language","crops":[paths],"export":"<pdf path>"}}.
-If no export tool works (or an AutoCAD task has no PDF), write status "unavailable" for every such task and say so
-once to the orchestrator.
-Revit: {REVIT_SERIAL}
-AutoCAD: {ACAD_READ_OPS}
+If a requested sheet PDF is missing, write status "unavailable" and report its sheet number.
 
 {COMMON}
 """)

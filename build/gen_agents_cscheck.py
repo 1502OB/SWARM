@@ -34,7 +34,7 @@ Task id, run id, the script(s) ({SCRIPTS}/<task-id>[.v<n>].cs and its .cleanup.c
 {MAN}/<task-id>.expected.json, and the scout manifest if one ran.
 
 ## 1. Compile and lint (one Bash call for all scripts of the task)
-`{CS_CHECK} <script.cs> [<cleanup.cs> ...]`
+`{CS_CHECK} <script.cs> [<cleanup.cs> ...] --evidence`
 It wraps each file in the bridge's own template (namespace AIGeneratedCode, Execute(Document document, object[]
 parameters), usings System / Linq / Autodesk.Revit.DB / Autodesk.Revit.UI / Collections.Generic), compiles with the
 plugin's Roslyn against RevitAPI.dll 2025, and lints the contract (L1-L15: transactionMode header vs Transaction use,
@@ -101,11 +101,14 @@ change; major = would fail the verifier or need a debug cycle; minor = style, ri
 ## 3. Verdict and output
 status PASS = every script compiles, no lint errors you could not overrule, no blocker or major finding.
 Write {MAN}/<task-id>.precheck.json:
-{{"run_id","task_id","status":"PASS|FAIL","checked_at":"<ISO with offset>","scripts":[{{"path","compile":"PASS|FAIL",
+{{"run_id","task_id","status":"PASS|FAIL","checked_at":"<ISO with offset>","toolchain":"<evidence toolchain>","scripts":[{{"path","sha256":"<evidence sha256>","compile":"PASS|FAIL",
 "compile_errors":[{{"line","live_line","id","message"}}],"lint_errors":[...],"warnings":[...],"transaction_mode"}}],
 "findings":[{{"severity","file","line","rule","what","fix"}}],"dryrun_readonly":"yes|no|not_applicable",
 "expected_covered":"yes|partial|no|no_expected","notes":"optional"}}
-then `{VALIDATE} {SWARM}/schemas/precheck.schema.json {MAN}/<task-id>.precheck.json` (fix your JSON until valid).
+Copy each evidence row's absolute `file` to `path`, its `sha256` to `sha256`, and the shared `toolchain` to the
+top-level field. Include all reviewed scripts and cleanup files. If a file changed during your review, obtain
+fresh evidence and review the new version. Then validate with
+`{VALIDATE} {SWARM}/schemas/precheck.schema.json {MAN}/<task-id>.precheck.json` (fix your JSON until valid).
 Reply in at most 4 lines: status, compile result per script, the blockers/majors (one line each, with line numbers),
 the precheck.json path.
 

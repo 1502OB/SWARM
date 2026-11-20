@@ -14,14 +14,18 @@ and pin), status, clear. Error messages name the port they tried.
 
 Idempotent; keeps index.js.orig next to the bundle the first time. Re-run after every plugin update.
 Usage: python tools/patch_revit_mcp.py [--check] [--restore]
+       python tools/patch_revit_mcp.py --health-only [--check|--restore]
+The health patch adds get_project_info(health=true) with a five-second budget and a request marker.
 Running sessions keep the old code until their revit-mcp server restarts (/mcp reconnect or new session).
 """
 import os
 import shutil
 import sys
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 MARK = "/* swarm-multi-instance-patch v2 */"
+HEALTH_MARK = "/* swarm-quick-health v1 */"
 BUNDLE = Path(os.environ["APPDATA"]) / "Autodesk/Revit/Addins/2025/revit_mcp_plugin/Commands/RevitMCPCommandSet/server/build/index.js"
 
 RESOLVER = MARK + r'''
@@ -136,8 +140,110 @@ EDITS = [
     ("  await registerTools(server);\n", "  await registerTools(server);\n  registerRevitInstanceTool(server);\n", 1),
 ]
 
+HEALTH = HEALTH_MARK + r'''
+var activeRevitRequests = 0;
+function swarmHealthReply(reply, marker) {
+  if (typeof reply === "string") return reply.startsWith(marker + "\n") ? reply : undefined;
+  if (reply && typeof reply === "object") {
+    for (const child of Object.values(reply)) {
+      const found = swarmHealthReply(child, marker);
+      if (found !== undefined) return found;
+    }
+  }
+}
+async function swarmRevitHealth() {
+  if (activeRevitRequests) return { status: "busy" };
+  const budgetMs = 5000;
+  const deadline = performance.now() + budgetMs;
+  const marker = randomUUID();
+  const code = 'var d = document; string id = ""; try { if (d.IsModelInCloud) { var p = d.GetCloudModelPath(); id = "cloud:" + p.GetProjectGUID() + "/" + p.GetModelGUID(); } else if (d.IsWorkshared) { var p = d.GetWorksharingCentralModelPath(); if (p != null) id = ModelPathUtils.ConvertModelPathToUserVisiblePath(p); } } catch {} if (string.IsNullOrEmpty(id)) id = d.PathName; return "' + marker + '\\n" + d.Title + "\\n" + id;';
+  const reply = await withRevitConnection(async (client) => {
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining < 1) throw new Error("health check connection exceeded five seconds");
+    return await client.sendCommand("send_code_to_revit", { code, parameters: [], transactionMode: "none" }, remaining);
+  }, budgetMs, 1);
+  const body = swarmHealthReply(reply, marker);
+  if (body === undefined) {
+    throw new Error("health reply had no matching request marker");
+  }
+  const [, document, document_id] = body.split("\n");
+  return { status: "alive", request_id: marker, document, document_id, elapsed_ms: Math.round(budgetMs + performance.now() - deadline) };
+}
+'''
+
+HEALTH_EDITS = [
+    ("async function withRevitConnection(operation, timeoutMs = 12e4) {\n",
+     HEALTH + "async function withRevitConnection(operation, timeoutMs = 12e4, maxRetries = MAX_RETRIES) {\n"
+     "  activeRevitRequests++;\n"),
+    ("for (let attempt = 0; attempt < MAX_RETRIES; attempt++)",
+     "for (let attempt = 0; attempt < maxRetries; attempt++)"),
+    ("attempt >= MAX_RETRIES - 1", "attempt >= maxRetries - 1"),
+    ("  } finally {\n    releaseMutex();\n  }\n}", "  } finally {\n    activeRevitRequests--;\n    releaseMutex();\n  }\n}"),
+    ('      includePhases: external_exports.boolean().optional().describe("Include project phases (default: true)"),',
+     '      health: external_exports.boolean().optional().describe("Short read-only bridge health and document identity check"),\n'
+     '      includePhases: external_exports.boolean().optional().describe("Include project phases (default: true)"),'),
+    ("      const params = {\n        includePhases: args.includePhases ?? true,",
+     '''      if (args.health) {
+        try {
+          return rawToolResponse("get_project_info", await swarmRevitHealth());
+        } catch (error2) {
+          return toolError("get_project_info", errorMessage(error2));
+        }
+      }
+      const params = {
+        includePhases: args.includePhases ?? true,'''),
+]
+
+
+def health_text(text):
+    if HEALTH_MARK in text:
+        return text
+    for old, new in HEALTH_EDITS:
+        if text.count(old) != 1:
+            raise ValueError(f"health patch anchor mismatch: {old[:80]!r}")
+        text = text.replace(old, new)
+    return text
+
+
+def install_health(bundle, check=False, restore=False):
+    backup = bundle.with_suffix(".js.pre-swarm-health")
+    current = bundle.read_text(encoding="utf-8")
+    patched = health_text(current)
+    if restore:
+        original = backup.read_text(encoding="utf-8")
+        if health_text(original) != current:
+            raise ValueError("installed bundle changed since the health patch; refusing to overwrite it")
+        patched = original
+    if current == patched:
+        print("health patch already installed:", bundle)
+        return 0
+    if check:
+        print("health patch anchors OK:", bundle)
+        return 0
+    if not restore:
+        if backup.exists() and backup.read_text(encoding="utf-8") != current:
+            raise ValueError(f"health backup already belongs to a different bundle: {backup}")
+        if not backup.exists():
+            shutil.copy2(bundle, backup)
+    with NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=bundle.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(patched)
+            stream.close()
+            os.replace(temporary, bundle)
+        finally:
+            temporary.unlink(missing_ok=True)
+    print("restored health backup:" if restore else "installed health patch:", bundle)
+    return 0
+
 
 def main():
+    if "--health-only" in sys.argv:
+        try:
+            return install_health(BUNDLE, check="--check" in sys.argv, restore="--restore" in sys.argv)
+        except (OSError, ValueError) as error:
+            print(error, file=sys.stderr)
+            return 1
     orig = BUNDLE.with_suffix(".js.orig")
     if "--restore" in sys.argv:
         shutil.copy2(orig, BUNDLE)

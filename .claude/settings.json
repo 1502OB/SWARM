@@ -16,12 +16,34 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "mcp__revit-mcp__.*|mcp__autocad-mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/hooks/bridge_timing.py\"",
+            "async": true
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
             "command": "python \"$HOME/.claude/hooks/lsp_lint_hook.py\"",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "mcp__revit-mcp__.*|mcp__autocad-mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/hooks/bridge_timing.py\"",
+            "async": true
           }
         ]
       }

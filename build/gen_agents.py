@@ -45,7 +45,7 @@ measure_between_elements query_stored_data
 # Everything else. say_hello is excluded everywhere: it opens a modal dialog in Revit.
 REVIT_WRITE = [R + n for n in """
 add_prefix_suffix add_shared_parameter ai_element_filter align_viewports
-apply_view_template audit_families batch_create_sheets batch_export
+apply_view_template audit_families batch_create_sheets
 batch_modify_view_range batch_rename bulk_modify_parameter_values cad_link_cleanup
 calculate_rai change_element_type clash_detection clear_parameter_values
 color_elements copy_elements create_array create_callout_from_rooms
@@ -203,28 +203,21 @@ RUN_ID_NOTE = ("The orchestrator gives you the run id (YYYYMMDD-HHMM or YYYYMMDD
 
 def harden_scout(app):
     if app == "revit":
-        what = ("sheets (number, name, id; number from the title block when the sheet parameter reads blank), views "
-                "(name, type, id), and element ids by category")
-        how = ("one read-only C# dump (send_code_to_revit, transactionMode \"none\"), one FilteredElementCollector "
-               "per category - never a scan of every element (see serialization above). Categories: sheets, views, "
-               "revision clouds, revisions, text notes, pipes, pipe fittings, pipe accessories, plumbing fixtures, "
-               "mechanical equipment, pipe tags / generic annotations, levels, grids")
+        probe = ('Use get_project_info(health=true) to confirm the active title and stable cloud/central/local ID. '
+                 'Query missing scopes via a read-only, filtered collector.')
     else:
-        what = "layouts (name, tab order), layers (name, frozen/off), and entity handles by type per layout"
-        how = "read-only LISP (ssget \"_X\" filtered by 410 layout), short calls; no entity dumps"
-    return f"""## Hardening rules
-- Index cache: {CACHE}/{app}-index.json. At the start of a run, if it exists, its "document" matches the open
-  document, and its "invalidated" field is false, answer lookups of sheets, views, layouts, layers, and element ids by
-  category from that file instead of calling the bridge. Only call the bridge for data not in the index.
-- If the index does not exist (or is for another document, or the orchestrator asks you to rebuild an invalidated
-  one), build it once: {what}. Build it with {how}. Above 2000 ids in a category, store the count and the first
-  2000. Write it with "document", "invalidated": false and "built_at" (ISO timestamp).
-- Every bridge return must stay under ~3 KB (longer returns are truncated): one call per category or a slice of
-  one, never one big dump (Phase 6 test 2026-11-04: 220 KB and 102 KB dumps came back unusable). Large MEP
-  categories (pipes, fittings, accessories, fixtures, equipment, tags, text notes; floor plans and schedules in
-  views) get "count" plus ids only when the orchestrator names that category for the run; the small lookup
-  categories (sheets, levels, grids, revisions, revision clouds, other views) always get full id lists.
-- Never write to the model or drawing. The index and your manifest are the only files you write.
+        probe = ('Use the full active DWG path (DWGPREFIX + DWGNAME). Query missing layouts/handles with short, '
+                 'filtered reads.')
+    return f"""## Scoped lookups
+- {probe} Confirm the identity before returning new model evidence. Read only the relevant scoped cache entries
+  explicitly passed by the orchestrator; reused data must match this run and the active document identity.
+- Query only missing scopes or the specifically named task targets. Each newly queried scope goes in
+  index_scopes, e.g. {{"sheets:P1.01":{{"complete":true,"entries":[{{"id":123456,"number":"P1.01"}}]}}}}.
+  Scope names may be hierarchic (e.g. views:123456 or layouts:Plan). Only mark complete if the entire scope
+  was queried and the result was not capped or truncated. Use entries with explicit id fields (string for
+  AutoCAD handles/names, integer for Revit element IDs). The orchestrator merges the fresh scopes.
+- Keep bridge returns under ~3 KB. Use one targeted filtered call per scope or slice. Do not enumerate the
+  whole model to answer a task lookup. Do not write to the model, drawing or shared cache.
 """
 
 
@@ -323,8 +316,10 @@ HARDEN_SCRIPTER = f"""## Hardening rules
 
 SCOUT_RULES = f"""## Output contract
 - Save a compact JSON summary to {MAN}/<task-id>.scout.json with keys:
-  task_id, app, document, tool_calls (integer, count every MCP call you made),
-  results (object of small summaries: counts, names, ids), errors (list).
+  run_id, task_id, app (revit|acad), document, document_id, tool_calls (integer, count every MCP call),
+  results (compact counts, names and ids), errors (list), confirmed_target_ids (exact task targets verified live),
+  and index_scopes (fresh scoped entries, optional). Write [] for confirmed_target_ids when there are no targets.
+  Do not report missing or unconfirmed targets as confirmed.
 - Summaries only: counts, names, ids, short lists. Never paste raw tool dumps into the JSON
   or into your reply. If a list is long (more than ~50 items), store the count plus the first 50.
 - Your reply to the orchestrator is the manifest path plus a one-line summary. Nothing else.
@@ -372,8 +367,7 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
 - Find a run's elements by the created-id lists in the write log, never by "id > N" (R51); report ids that appear
   in neither the list nor the baseline as "not ours (Jeremy?)" with their creator (GetWorksharingTooltipInfo).
 - First call of a run (LESSONS O37): return Document.Title, PathName and Application.VersionNumber so the orchestrator
-  can confirm the bridge is on the intended model. If cache/revit-index.json belongs to another document (title or
-  job number differs from project.json), rebuild it; never report it "invalidated" and carry on (O34).
+  can confirm the bridge is on the intended model. Use the supplied scopes only for the matching document.
 - Baseline every id a task will touch (O34): category, type, owner, and each value expected.json will check; that
   per-task baseline confirms ids a partial index cannot.
 - "Not found" (R83) is a result only with the search listed: keywords, element classes, schedule sections (Header,
@@ -564,7 +558,7 @@ Read those; do not look for a scout manifest that was not listed.
        never keep another type silently.
      - Source model (R92): when the detached arch document is not open, fall back to the loaded link
        (RevitLinkInstance.GetLinkDocument, identity transform checked) and say which one was used.
-     - PDF exports for visual checks (O39/R65): a read-only Document.Export script like {SCRIPTS}/VSV-ENL-PDF.cs (one
+     - PDF exports for visual checks (O39/R65): use the read-only {LIBRARY}/revit/export-visual-sheet.cs template (one
        PDFExportOptions export per sheet, file named by sheet number with '&' and spaces replaced, File.Exists + size
        in the return); never batch_export.
      - Warnings (R52): get_warnings caps at 500; when an expected item depends on new warnings, name them so the
@@ -705,6 +699,9 @@ Read those; do not look for a scout manifest that was not listed.
   TransactionGroup, one Transaction per step, a failures preprocessor (delete warnings, ProceedWithRollBack on
   errors, FailureHandlingOptions.SetForcedModalHandling(false)), and roll back the group on any error. Helper
   classes/methods go after the body: `... return result; }} <helpers> public static object DummyTail() {{ return null;`
+- Define a trailing request-id parameter for new Revit task scripts; keep existing parameter meanings. Echo it
+  first in each normal dry-run, execution and failure result, with the usual counts. The writer gives each
+  call a fresh id. Explicitly document the full parameter list in the script header.
 - Compile before you hand back (2026-11-11; 45 live compile errors each cost a Revit round trip): one call for the
   script and its cleanup, `python {SWARM}/tools/revit_cs_check.py {SCRIPTS}/<task-id>.cs {SCRIPTS}/<task-id>.cleanup.cs`.
   It compiles exactly as the bridge does (plugin's Roslyn, RevitAPI 2025, the bridge's wrapper and usings) and lints
@@ -792,16 +789,19 @@ Load the `revit-conventions` skill first.
 {WRITER_RULES.format(lock=LOCKS + "/revit.lock", man=MAN)}
 {harden_writer(LOCKS + "/revit.lock", "the Revit warnings count (get_warnings; the count only)")}
 ## Revit specifics
-- Compile gate (2026-11-11), before you take the lock or call Revit: `python {SWARM}/tools/revit_cs_check.py
-  <script> --quiet` on the exact file you will send. FAIL = status "failed", error "COMPILE: <first error line>", no
-  Revit call (a precheck.json is not a substitute: the file may have changed since). A typo fix you make must pass
-  this again before you send it.
-- Run the script path the orchestrator gives (default {SCRIPTS}/<task-id>.cs) with send_code_to_revit and the
-  transactionMode it names (scripts that manage their own TransactionGroup use "none"; otherwise "auto").
+- Before you take the lock or call Revit, run `python {SWARM}/tools/revit_cs_check.py "<script>"
+  --reuse-precheck "{MAN}/<task-id>.precheck.json" --run-id <run-id> --task-id <task-id> --emit-code`.
+  Exit 0 gives the reviewed code as a JSON string; send that exact decoded string as the MCP code, for both the dry
+  run and the real run. Confirm the version marker. Exits 1/2/3 block live execution. A changed file or toolchain
+  triggers an offline recompile and then a new independent precheck. Ask the orchestrator to send it to script-checker.
+- Run with send_code_to_revit and the script's named transactionMode. Give each dry run, real run and separate
+  read-back probe its own request marker. For an export use the request id parameter accepted by the shared template.
+  For ordinary scripts agree a marker in the output contract with the scripter and compare it before using the reply;
+  after uncertain results wait for reconciliation. Never modify the approved code to insert a marker.
 - Save the FULL return text verbatim to the log path given; if it looks truncated (no closing summary), say so.
 - The model is workshared on ACC: never Save, SynchronizeWithCentral, or relinquish (revit-ops does that after
   the verifier passes). Leave changes local.
-- Only small fixes are allowed (a typo that breaks compilation). Log any edit you made to the script.
+- Return any source fix to the scripter. The reviewed script stays byte-identical through the run.
 - Dry run gate (2026-11-12, LESSONS R47/R50/R54): never skip the dry run of a task that creates or deletes geometry,
   pipes, schedules or views, even when told to; say "dry run required (R54)" and stop. For geometry/pipe/delete
   scripts the dry run must report "commit: Committed failureTotal=0" (it reached Commit inside a rolled-back
@@ -810,7 +810,7 @@ Load the `revit-conventions` skill first.
   values. List cascade deletes by category + type; unnamed cascade ids are NO_GO until the scout names them.
 - Refuse a run whose snapshot is older than the last Revit reopen or crash the orchestrator told you about
   (report "stale snapshot (O30)").
-- Long scripts (2026-11-17, LESSONS R62/R70/R72): Read the file right before sending and send it verbatim; never
+- Long scripts (2026-11-17, LESSONS R62/R70/R72): Use the checked code from the gate and send it verbatim; never
   retype or reconstruct it from memory. Its line-1 marker ("// <task-id> v<n>") must match the version the
   orchestrator named. A script you cannot send verbatim is NOT_RUN "too long to send verbatim"; never trim it.
 - Dry-run safety (R77): a view/sheet/annotation script's dry run makes no change. A commit-then-rollback dry run must
@@ -828,15 +828,15 @@ Load the `revit-conventions` skill first.
   and confirm state with a cheap read (Document.IsModified, the created ids) before logging success.
 - Template scale (R90): when a script assigns templates to views of mixed scale, compare each view's Scale in the
   dry-run readback with expected.json; a scale the template overrode is NO_GO.
-- Exports (O39): an export task (e.g. a VSV-ENL-PDF.cs-type script) has its own task.json like any other; run it
-  alone (no other agent on Revit), and report each file's existence and size from the script's return.
-- 2026-11-20 (26021 ECM; LESSONS O39/R65/R99/R75/R52): never call batch_export, for checks or sets (it returned the
-  previous path three times on an idle bridge); exports are Document.Export scripts (scripts/ECM-D2-T1.cs pattern).
-  Document.Export never overwrites (it appends -1): before an export, list the target folder and report any existing
-  file of the same name to the orchestrator (it moves stale files; you never delete). Own-Transaction scripts
-  (transactionMode none, R99): the dry run commits nothing and rolls its Transaction back; the post-dry-run probe
-  still runs. A fitting delete that cascades to its own OST_PipeFittingCenterLine is expected (R75). A warnings count
-  of exactly 500 is the get_warnings cap: take the uncapped count with a read-only document.GetWarnings().Count call.
+- Exports (O39/R65): use a separate approved export task based on
+  {LIBRARY}/revit/export-visual-sheet.cs. Run one Document.Export per sheet with transactionMode "none".
+  The orchestrator supplies an exact, absent PDF path in a fresh run/attempt folder and the expected document
+  title, stable document ID and sheet number. Pass ["dryrun", <unique request id>, <title>, <document-id>, <sheet>, <path>] then the same
+  arguments with "run" and a different request id. Match the echoed id, sheet and path, and report the file
+  size. A missing or stale result goes to reconciliation; never substitute another filename or export tool.
+- Own-Transaction scripts (R99) roll back the named Transaction and still require the post-dry-run probe.
+  A fitting's own OST_PipeFittingCenterLine is an expected cascade (R75). A warnings count of exactly 500
+  is the get_warnings cap; use an uncapped Document.GetWarnings().Count probe (R52).
 - {REVIT_SERIAL}
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", REVIT_SAVE_RULE)}

@@ -1,6 +1,7 @@
 """Offline check of revit-mcp send_code_to_revit scripts: real compile + firm lint, no Revit needed.
 
     python tools/revit_cs_check.py <script.cs> [<script.cs> ...] [--json <out.json>] [--quiet]
+    python tools/revit_cs_check.py <script.cs> --reuse-precheck <precheck.json> --run-id <id> --task-id <id> --emit-code
     python tools/revit_cs_check.py --selftest
 
 What it does (2026-11-11):
@@ -23,9 +24,11 @@ Known gap: Revit references every assembly loaded in its AppDomain; offline we r
 framework + WindowsDesktop + RevitAPI/RevitAPIUI + Newtonsoft.Json. A script using an assembly Revit has not loaded
 could compile here and fail live (rare); one using a third-party add-in DLL fails here (report it, do not "fix" it).
 """
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -120,48 +123,54 @@ def references(core: Path, desk):
 
 
 def build_host(core: Path):
-    """Compile RevitCsHost.cs with the .NET Framework csc (C# 5) against .NET 8 + the plugin's Roslyn."""
+    """Publish one complete compiler directory per toolchain, even on parallel cold starts."""
     CACHE.mkdir(parents=True, exist_ok=True)
-    stamp = CACHE / "host.stamp"
-    roslyn = ROSLYN_DIR / "Microsoft.CodeAnalysis.CSharp.dll"
-    key = f"{HOST_SRC.stat().st_mtime_ns}|{roslyn.stat().st_mtime_ns}|{core}"
-    if HOST_DLL.is_file() and stamp.is_file() and stamp.read_text() == key:
-        return
+    roslyn = [ROSLYN_DIR / n for n in ("Microsoft.CodeAnalysis.dll", "Microsoft.CodeAnalysis.CSharp.dll")]
+    key = [str(core), *(str(p.stat().st_mtime_ns) for p in (HOST_SRC, *roslyn))]
+    target = CACHE / ("host-" + hashlib.sha256("|".join(key).encode("utf-8")).hexdigest()[:24])
+    host = target / HOST_DLL.name
+    if host.is_file():
+        return host
     if not CSC.is_file():
         raise SystemExit(f"revit_cs_check: {CSC} not found (needed once to build the compiler host)")
     refs = ["System.Private.CoreLib", "System.Runtime", "System.Collections", "System.Collections.Immutable",
             "System.Console", "System.Linq", "System.Text.Encoding.Extensions"]
-    cmd = [str(CSC), "-nologo", "-noconfig", "-nostdlib+", "-target:exe", f"-out:{HOST_DLL}"]
-    cmd += [f"-r:{core / (r + '.dll')}" for r in refs]
-    cmd += [f"-r:{ROSLYN_DIR / 'Microsoft.CodeAnalysis.dll'}", f"-r:{roslyn}", str(HOST_SRC)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise SystemExit("revit_cs_check: host build failed:\n" + r.stdout + r.stderr)
-    # The host runs on .NET 8 and loads the plugin's Roslyn from its own folder (probed without a deps.json).
-    import shutil
-    for n in ("Microsoft.CodeAnalysis.dll", "Microsoft.CodeAnalysis.CSharp.dll"):
-        shutil.copy2(ROSLYN_DIR / n, CACHE / n)
-    (CACHE / "RevitCsHost.runtimeconfig.json").write_text(json.dumps({"runtimeOptions": {
-        "tfm": "net8.0", "framework": {"name": "Microsoft.NETCore.App", "version": "8.0.0"},
-        "rollForward": "LatestPatch"}}, indent=2))
-    stamp.write_text(key)
+    with tempfile.TemporaryDirectory(prefix="host-build-", dir=CACHE) as directory:
+        staging = Path(directory)
+        cmd = [str(CSC), "-nologo", "-noconfig", "-nostdlib+", "-target:exe", f"-out:{staging / host.name}"]
+        cmd += [f"-r:{core / (r + '.dll')}" for r in refs]
+        cmd += [f"-r:{p}" for p in roslyn] + [str(HOST_SRC)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit("revit_cs_check: host build failed:\n" + r.stdout + r.stderr)
+        for assembly in roslyn:
+            shutil.copy2(assembly, staging / assembly.name)
+        (staging / host.with_suffix(".runtimeconfig.json").name).write_text(json.dumps({"runtimeOptions": {
+            "tfm": "net8.0", "framework": {"name": "Microsoft.NETCore.App", "version": "8.0.0"},
+            "rollForward": "LatestPatch"}}, indent=2))
+        try:
+            staging.rename(target)
+        except OSError:
+            if not host.is_file():
+                raise
+    return host
 
 
 # ----------------------------------------------------------------------------------------------- compile
-def compile_all(paths):
+def compile_all(paths, sources=None):
     exe, core, desk = env()
-    build_host(core)
+    host = build_host(core)
     tmp = Path(tempfile.mkdtemp(prefix="revit_cs_", dir=str(CACHE)))
     try:
         reflist = tmp / "refs.txt"
         reflist.write_text("\n".join(str(p) for p in references(core, desk)), encoding="utf-8")
         wrapped = {}
         for i, p in enumerate(paths):
-            code = Path(p).read_text(encoding="utf-8-sig")
+            code = sources[p][1] if sources is not None else Path(p).read_text(encoding="utf-8-sig")
             w = tmp / f"s{i}.cs"
             w.write_bytes((PREFIX + code + SUFFIX).encode("utf-8"))  # byte-exact: text mode would double \r
             wrapped[str(w)] = (p, code.count("\n") + 1)
-        r = subprocess.run([str(exe), str(HOST_DLL), str(reflist)] + list(wrapped), capture_output=True,
+        r = subprocess.run([str(exe), str(host), str(reflist)] + list(wrapped), capture_output=True,
                            text=True, encoding="utf-8", errors="replace")
         if r.returncode not in (0, 1) or "FILE\t" not in r.stdout:
             raise SystemExit("revit_cs_check: compiler host failed:\n" + r.stdout[-2000:] + r.stderr[-2000:])
@@ -185,7 +194,6 @@ def compile_all(paths):
                     out[src]["warnings"].append(d)
         return out
     finally:
-        import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -306,15 +314,50 @@ def lint(path: str, code: str):
 
 
 # ----------------------------------------------------------------------------------------------- main
-def check(paths):
-    comp = compile_all(paths)
+def read_source(path):
+    data = Path(path).read_bytes()
+    code = data.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(data).hexdigest(), code
+
+
+def toolchain_key():
+    exe, core, desk = env()
+    files = [exe, core, REVIT_DIR / "RevitAPI.dll", REVIT_DIR / "RevitAPIUI.dll",
+             ROSLYN_DIR / "Microsoft.CodeAnalysis.dll", ROSLYN_DIR / "Microsoft.CodeAnalysis.CSharp.dll",
+             ROSLYN_DIR / "Newtonsoft.Json.dll"]
+    if desk:
+        files.append(desk)
+    files.extend((HOST_SRC, Path(__file__), SWARM / "claude" / "hooks" / "writer_guard.py"))
+    identities = []
+    for file in files:
+        if file.exists():
+            st = file.stat()
+            identities.append((str(file.resolve()), st.st_size, st.st_mtime_ns))
+    return hashlib.sha256(json.dumps(identities).encode("utf-8")).hexdigest()
+
+
+def precheck_matches(precheck, run_id, task_id, path, digest, toolchain):
+    if (precheck.get("status"), precheck.get("run_id"), precheck.get("task_id"), precheck.get("toolchain")) != (
+            "PASS", run_id, task_id, toolchain):
+        return False
+    absolute = Path(path).resolve()
+    return any(Path(row["path"]).resolve() == absolute and row.get("sha256") == digest
+               and row.get("compile") == "PASS" for row in precheck.get("scripts", []) if row.get("path"))
+
+
+def check(paths, sources=None):
+    if sources is None:
+        sources = {p: read_source(p) for p in paths}
+    toolchain = toolchain_key()
+    comp = compile_all(paths, sources)
     results = []
     for p in paths:
-        code = Path(p).read_text(encoding="utf-8-sig")
+        digest, code = sources[p]
         mode, lerr, lwarn = lint(p, code)
         c = comp[p]
         status = "FAIL" if c["errors"] or lerr else "PASS"
-        results.append({"file": str(Path(p)).replace("\\", "/"), "status": status, "transaction_mode": mode,
+        results.append({"file": Path(p).resolve().as_posix(), "sha256": digest, "toolchain": toolchain,
+                        "status": status, "transaction_mode": mode,
                         "compile": c, "lint": {"errors": lerr, "warnings": lwarn}})
     return results
 
@@ -372,12 +415,22 @@ def selftest():
 def main(argv):
     if "--selftest" in argv:
         return selftest()
-    out = None
-    if "--json" in argv:
-        i = argv.index("--json")
-        out = argv[i + 1]
-        del argv[i:i + 2]
+    options = {}
+    for flag in ("--json", "--reuse-precheck", "--run-id", "--task-id"):
+        if flag in argv:
+            i = argv.index(flag)
+            if i + 1 >= len(argv) or argv[i + 1].startswith("--"):
+                sys.exit(f"revit_cs_check: {flag} requires a value")
+            options[flag] = argv[i + 1]
+            del argv[i:i + 2]
+    out = options.get("--json")
     quiet = "--quiet" in argv
+    evidence = "--evidence" in argv
+    if "--reuse-precheck" in options:
+        if not all(flag in options for flag in ("--run-id", "--task-id")) or "--emit-code" not in argv:
+            sys.exit("revit_cs_check: reuse requires --run-id, --task-id, and --emit-code")
+    elif "--emit-code" in argv:
+        sys.exit("revit_cs_check: --emit-code requires a verified precheck")
     paths = [a for a in argv if not a.startswith("--")]
     if not paths:
         print(__doc__)
@@ -386,11 +439,34 @@ def main(argv):
         if not Path(p).is_file():
             print(f"revit_cs_check: no such file {p}")
             return 2
-    res = check(paths)
-    report(res, quiet)
+    sources = {p: read_source(p) for p in paths}
+    precheck_path = options.get("--reuse-precheck")
+    if precheck_path:
+        try:
+            precheck = json.loads(Path(precheck_path).read_text(encoding="utf-8-sig"))
+            toolchain = toolchain_key()
+            matches = all(precheck_matches(precheck, options["--run-id"], options["--task-id"],
+                                           p, sources[p][0], toolchain) for p in paths)
+            # Check every reviewed file, including a cleanup not needed for this specific call.
+            matches = matches and all(read_source(row["path"])[0] == row["sha256"]
+                                      and row["compile"] == "PASS" for row in precheck["scripts"])
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            matches = False
+        if matches:
+            digest, code = sources[paths[0]]
+            print(json.dumps({"status": "PASS", "precheck_reused": True, "sha256": digest, "code": code}))
+            return 0
+        print("Precheck missing or changed. Recompiling for diagnostics. A fresh script-checker PASS is required.")
+    res = check(paths, sources)
+    if evidence:
+        print(json.dumps(res))
+    else:
+        report(res, quiet)
     if out:
         Path(out).write_text(json.dumps(res[0] if len(res) == 1 else res, indent=2), encoding="utf-8")
-    return 1 if any(r["status"] == "FAIL" for r in res) else 0
+    if any(r["status"] == "FAIL" for r in res):
+        return 1
+    return 3 if precheck_path else 0
 
 
 if __name__ == "__main__":

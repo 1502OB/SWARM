@@ -4,7 +4,6 @@
  "_notes": [
   "say_hello is excluded from both lists: it opens a modal dialog in Revit (MARKUP_SWARM_PROMPT Step 0).",
   "send_code_to_revit is WRITE by the rule; revit-scout and verifier already hold it behind revit_readonly_code_guard.py, which blocks transactions.",
-  "batch_export writes files, not the model; it is WRITE by the rule and also revit_export_sheet.",
   "AutoCAD tools are multi-operation (e.g. drawing: info|open|save|plot_pdf). They cannot be split by name; read-only is enforced per operation by acad_readonly_guard.py. acad_read = the tools existing read-only agents hold."
  ],
  "revit_read": [
@@ -51,7 +50,6 @@
   "mcp__revit-mcp__apply_view_template",
   "mcp__revit-mcp__audit_families",
   "mcp__revit-mcp__batch_create_sheets",
-  "mcp__revit-mcp__batch_export",
   "mcp__revit-mcp__batch_modify_view_range",
   "mcp__revit-mcp__batch_rename",
   "mcp__revit-mcp__bulk_modify_parameter_values",
@@ -188,6 +186,5 @@
  "egnyte_write": [
   "mcp__claude_ai_Egnyte__get_upload_url"
  ],
- "revit_export_sheet": "mcp__revit-mcp__batch_export",
  "acad_export_sheet_note": "drawing plot_pdf exists but fails on this bridge (LESSONS A6); -PUBLISH from a .lsp works; view get_screenshot captures the current view."
 }

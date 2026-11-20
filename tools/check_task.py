@@ -1,124 +1,136 @@
-"""Content check of a task.json against the model index cache, before any writer runs (plan -> VALIDATE -> execute).
+"""Check task targets against the current document's scoped index or a targeted scout.
 
-    python ~/swarm/tools/check_task.py <task.json> [<task.json> ...]
+    python tools/check_task.py <task.json> [<task.json> ...] [--scout <task.scout.json>]
 
-validate.py checks the SHAPE (schemas/task.schema.json); this checks the CONTENT against cache/<app>-index.json:
-  - the index is for the task's document and is not invalidated;
-  - every target id, and every 6+ digit id mentioned in "change", is in the index; a sheet/level/grid/revision id that
-    is not there is an ERROR listing valid alternatives of that category; an id in a category the index does not
-    list (partial index: text notes, plan views, MEP elements) is UNVERIFIABLE (warning: the scout must confirm it).
-Exit 0 = no errors (warnings allowed), 1 = errors, 2 = usage / unreadable file.
+Exit 0 = checked, 1 = task/evidence conflict, 2 = tool/input problem, 3 = fresh targeted scout needed.
 """
-import os
-import json
+import argparse
 import re
-import sys
 from pathlib import Path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from swarm_paths import SWARM  # noqa: E402
 
-APP_INDEX = {"revit": "revit-index.json", "acad": "acad-index.json"}
-# which index lists an operation's targets should be in (by operation-name keywords)
-OP_CATEGORY = [("sheet", "sheets"), ("revision-cloud", "revision_clouds"), ("revision", "revisions"),
-               ("level", "levels"), ("grid", "grids"), ("annotation", "generic_annotations")]
+from model_index import APPS, SWARM, identity, last_invalidation, load_json, lookup_scopes, read_index, scope_key
 
 
-def load(p):
-    with open(p, encoding="utf-8-sig") as f:
-        return json.load(f)
+def target_key(value):
+    return str(value).strip().casefold()
 
 
-def flatten(index):
-    """id -> (category, label) from every list in the index."""
-    out = {}
-    for cat, val in index.items():
-        if not isinstance(val, list):
-            continue
-        for row in val:
-            if isinstance(row, int):
-                out[row] = (cat, "")
-            elif isinstance(row, list):
-                ids = [x for x in row if isinstance(x, int)]
-                label = " / ".join(str(x) for x in row if isinstance(x, str) and x)
-                for i in ids:
-                    out[i] = (cat, label)
-            elif isinstance(row, dict):
-                i = row.get("id")
-                if isinstance(i, int):
-                    out[i] = (cat, row.get("name") or row.get("number") or "")
-    return out
+def indexed_targets(scopes):
+    found = {}
+    for name, scope in scopes.items():
+        for row in scope["entries"]:
+            value = row.get("id") if isinstance(row, dict) else row
+            if isinstance(value, (int, str)):
+                found.setdefault(target_key(value), name)
+    return found
 
 
-def check(task_path):
+def scout_targets(scout, task, document_id, project):
+    if not scout:
+        return set(), False
+    if any(scout.get(key) != task.get(key) for key in ("run_id", "task_id", "app")):
+        raise ValueError("scout run_id, task_id, or app differs from the task")
+    key = identity(scout.get("document_id"))
+    if not key or (document_id and key != document_id):
+        raise ValueError("scout live document identity differs from the task's document")
+    if not document_id:
+        expected_title = project.get(f"{task['app']}_document")
+        if not expected_title or target_key(scout.get("document")) != target_key(expected_title):
+            raise ValueError("supply a stable document_id or confirm the exact project document with a fresh scout")
+    confirmed = scout.get("confirmed_target_ids")
+    if not isinstance(confirmed, list):
+        raise ValueError("scout must explicitly list confirmed_target_ids, even when empty")
+    return {target_key(value) for value in confirmed}, True
+
+
+def check(task_path, scout_path=None):
     errors, warnings, found = [], [], []
-    task = load(task_path)
-    # item 10 (2026-11-06): task ids carry the project's prefix, so two projects never share a manifest name
+    task = load_json(task_path)
     try:
-        proj = load(SWARM / "manifests" / "project.json")
+        project = load_json(SWARM / "manifests" / "project.json")
     except (OSError, ValueError):
-        proj = {}
-    want = proj.get("task_prefix")
-    tid = str(task.get("task_id", ""))
-    if want and not tid.startswith(want + "-"):
-        errors.append(f"task_id '{tid}' must start with '{want}-' (task_prefix of {proj.get('project_number', '?')} "
-                      "in swarm/manifests/project.json)")
-    elif not want:
-        warnings.append("project.json has no task_prefix: set it at Step 0 (e.g. C22) so task ids stay unique")
+        project = {}
+    prefix = project.get("task_prefix")
+    task_id = task.get("task_id", "")
+    if prefix and not task_id.startswith(prefix + "-"):
+        errors.append(f"task_id '{task_id}' must start with '{prefix}-' for the active project")
+    elif not prefix:
+        warnings.append("active project has no task_prefix; set it at Step 0")
+
     app = task.get("app")
-    idx_path = SWARM / "cache" / APP_INDEX.get(app, "?")
-    if not idx_path.exists():
-        return [f"no index {idx_path.name} for app {app!r}: run the {app} scout first"], [], []
-    index = load(idx_path)
-    doc = index.get("document", "")
-    if index.get("invalidated"):
-        warnings.append(f"index {idx_path.name} is invalidated (a writer ran since it was built): ids may have changed")
-    if doc and doc not in task.get("change", ""):
-        warnings.append(f"index is for document '{doc}', which the task's change text does not name")
-    ids = flatten(index)
-    op = task.get("operation", "")
-    expect_cat = next((c for k, c in OP_CATEGORY if k in op), None)
-    targets = [t for t in task.get("target_ids", []) if isinstance(t, int) or str(t).isdigit()]
-    mentioned = [int(x) for x in re.findall(r"\b(\d{6,9})\b", task.get("change", ""))]
-    partial = bool(index.get("partial"))
-    for tid in dict.fromkeys([int(t) for t in targets] + mentioned):
-        role = "target" if tid in [int(t) for t in targets] else "mentioned"
-        if tid in ids:
-            cat, label = ids[tid]
-            found.append(f"{role} {tid}: {cat}{' ' + label if label else ''}")
-            if role == "target" and expect_cat and cat != expect_cat:
-                warnings.append(f"target {tid} is a {cat}, but operation '{op}' implies {expect_cat}")
-        elif expect_cat and role == "target" and isinstance(index.get(expect_cat), list):
-            alts = [f"{i} ({lbl})" if lbl else str(i) for i, (c, lbl) in ids.items() if c == expect_cat][:8]
-            errors.append(f"target {tid} not found in {expect_cat} of '{doc}'; valid {expect_cat}: {', '.join(alts)}"
-                          + (" ..." if sum(1 for c, _ in ids.values() if c == expect_cat) > 8 else ""))
+    if app not in APPS:
+        return errors + [f"unsupported task app: {app!r}"], warnings, found, []
+    document_id = identity(task.get("document_id") or project.get(f"{app}_document_id"))
+    run_id = task.get("run_id")
+    if not run_id:
+        return errors + ["task requires run_id"], warnings, found, []
+
+    # Only use scope snapshots from this run and the exact intended document.
+    index = read_index(app, document_id, run_id) if document_id else {"scopes": {}}
+    requested = [scope_key(scope) for scope in task.get("lookup_scopes", [])]
+    scopes = lookup_scopes(index["scopes"], requested)
+    known = indexed_targets(scopes)
+    if scout_path is None:
+        candidate = Path(task_path).with_name(f"{task_id}.scout.json")
+        if candidate.is_file():
+            candidate_data = load_json(candidate)
+            if "confirmed_target_ids" in candidate_data and candidate_data.get("run_id") == run_id:
+                scout_path = candidate
+    if scout_path and Path(scout_path).stat().st_mtime_ns <= last_invalidation(index, requested):
+        warnings.append("targeted scout predates a write or uncertain model change")
+        scout_path = None
+    try:
+        confirmed, identity_checked = scout_targets(load_json(scout_path) if scout_path else None,
+                                                     task, document_id, project)
+    except ValueError as error:
+        return errors + [str(error)], warnings, found, []
+
+    needs_scout = []
+    targets = list(dict.fromkeys(target_key(t) for t in task.get("target_ids", [])))
+    for target in targets:
+        if target in confirmed:
+            found.append(f"target {target}: current scout")
+        elif target in known:
+            found.append(f"target {target}: cached {known[target]}")
+        elif requested and all(scopes.get(name, {}).get("complete") for name in requested):
+            errors.append(f"target {target} absent from complete scopes {', '.join(requested)}")
         else:
-            why = "index is partial (" + index.get("partial_note", "")[:80] + "...)" if partial else "category not indexed"
-            warnings.append(f"{role} {tid} UNVERIFIABLE from the index ({why}): the scout must confirm it exists")
-    return errors, warnings, found
+            needs_scout.append(f"target {target} has no current evidence")
+    if not scopes and not identity_checked and not needs_scout:
+        needs_scout.append("no current document evidence; have the scout confirm the live document")
+    for value in dict.fromkeys(re.findall(r"\b(\d{6,9})\b", task.get("change", ""))):
+        if value in known and value not in targets:
+            found.append(f"mentioned {value}: cached {known[value]}")
+    return errors, warnings, found, needs_scout
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__.strip().splitlines()[2].strip())
-        sys.exit(2)
-    bad = 0
-    for p in sys.argv[1:]:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("tasks", nargs="+")
+    parser.add_argument("--scout")
+    args = parser.parse_args()
+    if args.scout and len(args.tasks) != 1:
+        parser.error("--scout applies to one task")
+
+    failures = set()
+    for path in args.tasks:
         try:
-            errors, warnings, found = check(p)
-        except (OSError, ValueError) as e:
-            print(f"ERROR {p}: {e}")
-            sys.exit(2)
-        status = "FAIL" if errors else ("WARN" if warnings else "OK")
-        print(f"{status} {Path(p).name}: {len(found)} found, {len(warnings)} warning(s), {len(errors)} error(s)")
-        for e in errors:
-            print("  ERROR " + e)
-        for w in warnings:
-            print("  WARN  " + w)
-        for f in found:
-            print("  ok    " + f)
-        bad += bool(errors)
-    sys.exit(1 if bad else 0)
+            errors, warnings, found, needs_scout = check(path, args.scout)
+        except (OSError, ValueError, TypeError) as error:
+            print(f"ERROR {path}: {error}")
+            failures.add(2)
+            continue
+        status = "FAIL" if errors else "NEEDS_SCOUT" if needs_scout else "WARN" if warnings else "OK"
+        print(f"{status} {Path(path).name}: {len(found)} found")
+        for label, items in (("ERROR", errors), ("WARN", warnings), ("SCOUT", needs_scout), ("ok", found)):
+            for item in items:
+                print(f"  {label}  {item}")
+        if errors:
+            failures.add(1)
+        elif needs_scout:
+            failures.add(3)
+    return next((code for code in (2, 1, 3) if code in failures), 0)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

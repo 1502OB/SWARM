@@ -229,15 +229,18 @@ order), a section per requirement, an execution order section (batches that can 
 For every executable change also write {MAN}/<task-id>.task.json (task ids <prefix>-R<n>-T<m>, prefix = task_prefix in project.json, e.g. C22-R1-T1, so ids are unique per
 project and each traces to its
 requirement) in the strict schema {SWARM}/schemas/task.schema.json (2026-11-04; writers refuse anything else). The
-orchestrator gives you the run id. Exactly these keys:
+orchestrator gives you the run id. Required keys:
 {{"run_id":"<run id>","task_id":"<prefix>-R1-T1","app":"revit|acad","operation":"<short operation type, e.g. add-revision-cloud,
 edit-text-note, resize-pipe, move-tag; scripter uses it to find library scripts>","target_ids":[<element ids or DWG
 handles>],"change":"<one self-contained paragraph: what, where (sheet, view/layout, view id or layer, grid/room),
 exact values, document name, revision sequence + description if any, depends on, batch>","source_requirement_id":
 "R1","assigned_agent":"revit-writer|acad-writer|excel-writer"}}
-A change that answers more than one requirement gets one task per requirement. Dependencies, batches and the checks
+Set optional `document_id` to the stable model or full DWG path for a different document from Step 0.
+Add `lookup_scopes` as an array of specific relevant scopes (e.g. `sheets:P1.01`, `views:123456`) when known.
+Keep real live dependencies in the plan and distinguish the baseline needed for scripting from the verified
+state needed before writing. A change that answers more than one requirement gets one task per requirement. Dependencies, batches and the checks
 the verifier will need live in REVISION_PLAN.md (scripter writes expected.json). You cannot run the validator (no
-Bash), so match the keys exactly: the writer validates the file and refuses it otherwise. Use the revision the
+Bash); the writer validates every task before executing it. Use the revision the
 requirements or scout manifests name; if none is named, the task is blocked (open question), never invent one.
 Blocked requirements get NO task manifest. If the open model/DWG is not the project the requirement is about,
 every task for it is blocked with that reason.

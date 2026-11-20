@@ -7,12 +7,18 @@ y down: the same space as annotation rects, so a located rectangle can be used f
   grid   <pdf> <x0,y0,x1,y1> <out_png>                   a region with labeled coordinate gridlines
   check  <pdf> <x0,y0,x1,y1> <out_png>                   the rectangle drawn in red with 150 pt of context
   text   <pdf> <out_txt>                                 the page text (for grep across sheets)
+  prep   <src_dir> <renders_dir> <text_dir> [--reuse-from <previous_run>] [--workers 4]
+         [--dpi 150] [--rows 2 --cols 3]
+         Prepare one-page sheet PDFs together, reusing complete outputs for identical PDFs and settings.
 Page 1 is used. Every command prints one JSON line with the output path and the page size.
 Outputs must be under ~/swarm (source folders stay read-only).
 """
+from concurrent.futures import ProcessPoolExecutor
+from hashlib import sha256
 import os
 import json
 import math
+import shutil
 import sys
 from pathlib import Path
 
@@ -24,9 +30,20 @@ OUT_ROOT = SWARM.resolve()
 MAX_PX = 2400
 
 
+def _comparable(path):
+    # On Windows a directory created by another worker can resolve through the extended path prefix.
+    name = os.fspath(path)
+    if os.name == "nt":
+        if name.startswith("\\\\?\\UNC\\"):
+            name = "\\\\" + name[8:]
+        elif name.startswith("\\\\?\\") and name[5:6] == ":":
+            name = name[4:]
+    return Path(name)
+
+
 def _out(path):
     p = Path(path).resolve()
-    if OUT_ROOT not in p.parents:
+    if _comparable(OUT_ROOT) not in _comparable(p).parents:
         sys.exit(f"output {p} is outside {OUT_ROOT}; write renders to your scratch folder under swarm/")
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
@@ -63,7 +80,12 @@ def _report(page, **kw):
 
 
 def render(pdf, out_dir, dpi=150, rows=2, cols=3):
-    page = _page(pdf)
+    with pymupdf.open(pdf) as doc:
+        tiles = _render(doc[0], out_dir, dpi, rows, cols)
+        _report(doc[0], out_dir=str(out_dir), tiles=tiles)
+
+
+def _render(page, out_dir, dpi, rows, cols):
     b = _bounds(page)
     out_dir = Path(out_dir)
     _shot(page, b, out_dir / "overview.png", dpi=int(1600 * 72 / max(b.width, b.height)))
@@ -82,7 +104,73 @@ def render(pdf, out_dir, dpi=150, rows=2, cols=3):
             _, used, pw, ph = _shot(page, rect, out_dir / f"{name}.png", dpi)
             tiles[name] = {"rect": [round(v, 1) for v in rect], "dpi": used, "px": [pw, ph]}
     (_out(out_dir / "tiles.json")).write_text(json.dumps(tiles, indent=1), encoding="utf-8")
-    _report(page, out_dir=str(out_dir), tiles=len(tiles))
+    return len(tiles)
+
+
+def _ready(stamp, signature, outputs):
+    try:
+        previous = json.loads(stamp.read_text(encoding="utf-8"))
+        return previous == signature and outputs[0].is_file() and all(
+            p.is_file() and p.stat().st_size for p in outputs[1:])
+    except (OSError, ValueError):
+        return False
+
+
+def _prep_sheet(job):
+    pdf, renders, text_path, dpi, rows, cols, reuse_from = job
+    stamp = _out(renders / ".prep.json")
+    renders = stamp.parent
+    text_path = _out(text_path)
+    data = pdf.read_bytes()
+    signature = {"sha256": sha256(data).hexdigest(), "dpi": dpi, "rows": rows,
+                 "cols": cols, "renderer": pymupdf.VersionBind, "format": 1}
+    names = ["overview.png", "tiles.json"]
+    names.extend(f"tile_r{r}c{c}.png" for r in range(rows) for c in range(cols))
+    outputs = [text_path, *(_out(renders / name) for name in names)]
+    if _ready(stamp, signature, outputs):
+        return {"sheet": pdf.stem, "status": "reused"}
+
+    stamp.unlink(missing_ok=True)
+    reused = False
+    if reuse_from is not None:
+        prior_renders = reuse_from / "renders" / pdf.stem
+        previous_outputs = [reuse_from / "text" / text_path.name, *(prior_renders / name for name in names)]
+        if _ready(prior_renders / ".prep.json", signature, previous_outputs):
+            for old, current in zip(previous_outputs, outputs):
+                if old.resolve() != current.resolve():
+                    shutil.copyfile(old, _out(current))
+            reused = True
+    if not reused:
+        with pymupdf.open(stream=data, filetype="pdf") as doc:
+            if len(doc) != 1:
+                raise ValueError(f"{pdf.name}: expected one page per sheet, found {len(doc)}")
+            page = doc[0]
+            _render(page, renders, dpi, rows, cols)
+            text_path.write_text(page.get_text(), encoding="utf-8")
+    expected_tiles = set(names[2:])
+    for tile in renders.glob("tile_r*c*.png"):
+        if tile.name not in expected_tiles:
+            tile.unlink()
+    _out(stamp).write_text(json.dumps(signature), encoding="utf-8")
+    return {"sheet": pdf.stem, "status": "reused" if reused else "prepared"}
+
+
+def prep(src, renders, text_dir, dpi=150, rows=2, cols=3, workers=4, reuse_from=None):
+    if min(dpi, rows, cols, workers) < 1 or workers > 8:
+        raise ValueError("use positive render settings and between 1 and 8 workers")
+    pdfs = sorted(p for p in Path(src).iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
+    if not pdfs:
+        raise ValueError(f"no sheet PDFs in {src}")
+    if len({p.stem.casefold() for p in pdfs}) != len(pdfs):
+        raise ValueError("sheet PDF names must be unique regardless of case")
+    renders, text_dir = Path(renders).absolute(), Path(text_dir).absolute()
+    prior = Path(reuse_from).absolute() if reuse_from else None
+    jobs = [(p, renders / p.stem, text_dir / f"{p.stem}.txt", dpi, rows, cols, prior) for p in pdfs]
+    if min(workers, len(jobs)) == 1:
+        return list(map(_prep_sheet, jobs))
+    # MuPDF does not support concurrent threads within one process.
+    with ProcessPoolExecutor(max_workers=min(workers, len(jobs))) as pool:
+        return list(pool.map(_prep_sheet, jobs))
 
 
 def zoom(pdf, rect, out_png, dpi=300):
@@ -138,6 +226,8 @@ def _opt(args, name, default):
 if __name__ == "__main__":
     a = sys.argv[1:]
     dpi = _opt(a, "--dpi", None)
+    workers = int(_opt(a, "--workers", 4))
+    reuse_from = _opt(a, "--reuse-from", None)
     rows, cols = int(_opt(a, "--rows", 2)), int(_opt(a, "--cols", 3))
     cmd = a[0] if a else ""
     if cmd == "render":
@@ -150,5 +240,11 @@ if __name__ == "__main__":
         check(a[1], a[2], a[3])
     elif cmd == "text":
         text(a[1], a[2])
+    elif cmd == "prep" and len(a) == 4:
+        try:
+            sheets = prep(*a[1:], int(dpi or 150), rows, cols, workers, reuse_from)
+        except (OSError, ValueError, RuntimeError) as exc:
+            sys.exit(str(exc))
+        print(json.dumps({"sheets": sheets}))
     else:
         sys.exit(__doc__)

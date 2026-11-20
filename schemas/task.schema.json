@@ -35,6 +35,17 @@
       "type": "string",
       "minLength": 1
     },
+    "document_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable active model or drawing identity. Required when this task targets a different document than the project's current document."
+    },
+    "lookup_scopes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "description": "Scopes relevant to target lookups, for example sheets, sheets:P1.01, views:123456, layouts:Plan."
+    },
     "target_ids": {
       "type": "array",
       "items": {

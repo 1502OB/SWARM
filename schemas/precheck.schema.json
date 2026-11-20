@@ -9,6 +9,7 @@
     "task_id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
     "status": {"type": "string", "enum": ["PASS", "FAIL"]},
     "checked_at": {"type": "string", "minLength": 1},
+    "toolchain": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "scripts": {
       "type": "array",
       "minItems": 1,
@@ -18,6 +19,7 @@
         "required": ["path", "compile", "lint_errors", "transaction_mode"],
         "properties": {
           "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
           "compile": {"type": "string", "enum": ["PASS", "FAIL"]},
           "compile_errors": {"type": "array"},
           "lint_errors": {"type": "array"},

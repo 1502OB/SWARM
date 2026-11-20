@@ -4,6 +4,7 @@
            [--units pt|in|frac] [--sheet W,H] [--dpi 200]
     python ~/swarm/tools/visual_crop.py <sheet.pdf | folder> <page-1-based | all> <task-id> --find "<text>"
            [--margin 72] [--dpi 200]
+    python ~/swarm/tools/visual_crop.py <sheet.pdf> <page-1-based> --verify-sheet "<sheet number>"
 
 --find "<text>": crop around the FIRST match of the text (PyMuPDF search_for, case-insensitive) padded by --margin
   points (default 72 = 1 in) on each side. With page "all" the first page that has a match is used. Text boxes
@@ -27,6 +28,7 @@ crops/<task-id>.before.png exists. Prints JSON: pdf used, page size, rectangle, 
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -60,8 +62,37 @@ def text_rect(page, text):
     return [fitz.Rect(r) * page.rotation_matrix for r in page.search_for(text)]
 
 
+def verify_sheet(path, page_no, sheet):
+    if path.suffix.lower() != ".pdf" or not path.is_file() or not path.stat().st_size:
+        raise ValueError("expected an exact, nonempty PDF path")
+    if not sheet or not sheet.strip():
+        raise ValueError("expected sheet number is empty")
+    with fitz.open(str(path)) as doc:
+        if not 1 <= page_no <= len(doc):
+            raise ValueError(f"page {page_no} outside PDF with {len(doc)} pages")
+        page = doc[page_no - 1]
+        # Match a complete identifier, e.g. P1.01 must not match P1.011.
+        token = re.compile(rf"(?<![\w.-]){re.escape(sheet)}(?![\w.-])", re.IGNORECASE)
+        rect = page.rect
+        title_block = fitz.Rect(rect.x0 + rect.width * 0.75, rect.y0 + rect.height * 0.70, rect.x1, rect.y1)
+        clip = (title_block * page.derotation_matrix).normalize() if page.rotation else title_block
+        matched = bool(token.search(page.get_text(clip=clip)))
+        return {"pdf": path.absolute().as_posix(), "page": page_no, "sheet": sheet,
+                "status": "verified" if matched else "needs_visual_title_block_check"}
+
+
 def main():
     args = sys.argv[1:]
+    verify = opt(args, "--verify-sheet", None)
+    if verify is not None:
+        if len(args) != 2:
+            fail("--verify-sheet requires an exact PDF path and a page number")
+        try:
+            result = verify_sheet(Path(args[0]), int(args[1]), verify)
+        except (OSError, ValueError, RuntimeError) as exc:
+            fail(str(exc))
+        print(json.dumps(result))
+        sys.exit(0 if result["status"] == "verified" else 1)
     units = opt(args, "--units", "pt")
     sheet = opt(args, "--sheet", None)
     dpi = int(opt(args, "--dpi", "200"))

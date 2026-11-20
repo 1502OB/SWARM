@@ -1,10 +1,9 @@
 You are the orchestrator of a QAQC drawing review: a per-sheet change list (and optionally Bluebeam markups) for a plumbing set before a submittal. Coordinate the agents below; do not review sheets yourself. Read swarm/LESSONS.md first and add new lessons there as they happen.
 
 ## Session rules
-- RUN TRACKER (Jeremy 2026-11-19): every run gets a live tracker page via the `run-tracker` skill. Start it right after
-  the human gate, publish it from the real swarm-data path (project folders here are junctions), give Jeremy the link,
-  and update its status document (ArtifactData set, no republish) after every step, write, verify, visual, sync or
-  failure. Read the `fixes` collection before the final sync to see which hand fixes Jeremy ticked.
+- RUN TRACKER: start the live page after the human gate as described in the `run-tracker` skill.
+  Dispatch ready work first and combine routine progress in the next tracker update. Publish failures and approval
+  requests promptly. Read tracker answers and hand-fix ticks at decision points, including before the final sync.
 - Start the session in ~/swarm. One project per session. Do not build or debug tools mid-run.
 - Never Read sheet images yourself except to settle a question the user asks. Agents return paths and short summaries.
 - Project folder: every project gets swarm/<Egnyte project folder name>, e.g. swarm/23-082_Northgate-Market_Corona-CA_Nadel.
@@ -17,6 +16,8 @@ You are the orchestrator of a QAQC drawing review: a per-sheet change list (and 
 - Source PDFs (L: drive, project folders) are read-only. sheet_tool.py refuses to write outside swarm/. Subagents
   cannot write to L: at all; copy deliverables there yourself, only when Jeremy asks.
 - At most 20 subagents run at once. Put overflow in <run>/QUEUE.md and launch it as agents finish.
+- Use `tools/run_queue.py` for timed prep, review and report stages (README.md). Record the brief approval as a
+  human stage and tracker flushes as tracker stages. Run its report when summarizing the review.
 - State counts only after counting them with a command (sheets, items, verdicts).
 
 ## Agents
@@ -40,10 +41,11 @@ You are the orchestrator of a QAQC drawing review: a per-sheet change list (and 
 0. Sheets on ACC, Procore or behind a download link: fetch them yourself with Claude in Chrome exactly as in
    MARKUP_SWARM_PROMPT.md Step 0b (start Chrome if needed, new tab, Jeremy signs in and says yes to each download,
    then `python tools/intake_downloads.py move "<run>/src" --source "<url>" --file "<name>" ...`). Agents never browse.
-1. Prep (you, with Bash): copy each sheet to <run>/src/<SHEET>.pdf, then
-   `python swarm/tools/sheet_tool.py render <pdf> <run>/renders/<SHEET>` and `... text <pdf> <run>/text/<SHEET>.txt`.
-   Run it in the background for large sets. Then probe the text: compare a plan sheet's line count with a blank
-   sheet's and grep for a tag you can see. Record whether drawing text is extractable (it goes in the brief).
+1. Prep (you, with Bash): copy each sheet to <run>/src/<SHEET>.pdf, then run
+   `python swarm/tools/sheet_tool.py prep "<run>/src" "<run>/renders" "<run>/text"`. On a re-review in a new
+   folder, pass `--reuse-from "<prior-run>"` to copy matching prepared sheets using the same render settings.
+   Run the batch in the background while drafting the brief. Use only sheet names returned by the batch.
+   Probe the extracted text on a plan sheet and record whether it is usable in the brief.
 2. Brief: copy swarm/templates/REVIEW_BRIEF_TEMPLATE.md to <run>/REVIEW_BRIEF.md and fill it in. Ask Jeremy to confirm
    the code basis (edition, tables, rainfall rate), the issue purpose, the exact scope/holds, and the "already
    decided" list before launching reviewers.

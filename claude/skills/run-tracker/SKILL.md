@@ -1,6 +1,6 @@
 ---
 name: run-tracker
-description: "Live tracker page for every swarm run (Revit/AutoCAD/QAQC/plan check): steps, sheets by building or discipline, readiness meter, and hand-fix checkboxes Jeremy ticks. Use at the start of every run (after the plan/gate), and update it after every step, write, verify, visual or sync. Updates are database writes, not republishes."
+description: "Live tracker for Revit, AutoCAD and QAQC runs. Publishes coalesced progress and immediate failures or approval requests. Collects answers and hand-fix ticks at decision points."
 ---
 
 # Run tracker
@@ -21,14 +21,24 @@ publish you never republish to update it: you `ArtifactData set` the status docu
    first time). Keep the returned `version`.
 4. Record the URL in the project STATUS.md and in manifests/project.json (`tracker_url`). Give Jeremy the link.
 
-## Update (after every step, write, verify, visual, sync, failure)
-FIRST, at EVERY update: `ArtifactData list collection:"answers"` AND `ArtifactData list collection:"fixes"`; act on
-new answers, carry new fix ticks into the status JSON, and tell Jeremy what you picked up (26021 ECM: answers sat
-unread until Jeremy asked; LESSONS O46). After hand-fix ticks, remind him to Synchronize (O40).
-Then edit the local status JSON, set `updated` to now (ISO UTC), then `ArtifactData set` with `file_path` and
-`if_version` = the last version. On a version conflict, `get` the doc, merge, retry once. No republish, so no prompt.
-Republish only to change the template itself (same file_path; omit `capabilities` so they carry forward).
-Before the final sync, `ArtifactData list collection:"fixes"` to see which hand fixes Jeremy has ticked, and say so.
+## Update while work proceeds
+
+- After routine steps, edit the local status JSON and mark it dirty. Dispatch ready work first. When the CAD
+  bridge or an offline agent is busy, publish one snapshot containing the accumulated changes. Flush on
+  meaningful batch milestones and before ending the run. With no changes, skip the status write.
+- Publish failures, approval requests and questions promptly. If the tracker is unavailable, surface those
+  items in chat and keep the accumulated local snapshot for the next flush.
+- At a pending human gate, when Jeremy reports a change, before launching work affected by answers or hand
+  fixes, and before final sync, read both `answers` and `fixes`. Independent lists may run together. Apply new
+  answers only to the named decisions. Carry hand-fix ticks into status, tell Jeremy and remind him to sync
+  as required (O40). Unaffected routine progress can use the last merged answers and ticks.
+- While a gate is pending, check again after the next available work finishes, or at a short interval when idle.
+- To flush, set `updated` to current ISO UTC and call `ArtifactData set` with `file_path` and `if_version`
+  from the last status write. On a version conflict, get the current document, merge, and retry once.
+  Keep new changes dirty until their snapshot lands. Use one publisher at a time.
+- Use a `tracker` queue stage for the elapsed time of a flush when the run uses the queue. Start the `human`
+  stage when the approval/question is published and finish it when the decision arrives.
+- Republish only for template changes (same real path and existing capabilities).
 
 ## Mistakes and errors log
 Log EVERY failure as it happens (not at the end): script/compile error, rollback, NO_GO, timeout, crash, stuck bridge,
@@ -43,7 +53,7 @@ At the end of the run the log is the input for the retro and the lessons roll-in
 When a step is blocked on Jeremy's decision, add it to `questions` (and mark the step `wait` with a note) as well as
 asking in chat. The page shows a highlighted QUESTIONS panel and a count in the status bar; Jeremy clicks an option
 and/or types a note. Answers land in collection `answers`, doc id = question id: `{choice, text, at}`.
-At every update (and when Jeremy says he answered), `ArtifactData list collection:"answers"`, act on the answers,
+At the decision point or when Jeremy says he answered, list `answers`, act on the answers,
 then remove answered questions from `questions` (or keep them while the blocked step finishes). Answers are
 Jeremy's words: treat them as his decision for that question only. Keep 1-4 open questions, each one decision,
 with the trade-off in `why` and the step it blocks in `blocks`.
