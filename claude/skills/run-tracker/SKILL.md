@@ -22,7 +22,10 @@ publish you never republish to update it: you `ArtifactData set` the status docu
 4. Record the URL in the project STATUS.md and in manifests/project.json (`tracker_url`). Give Jeremy the link.
 
 ## Update (after every step, write, verify, visual, sync, failure)
-Edit the local status JSON, set `updated` to now (ISO UTC), then `ArtifactData set` with `file_path` and
+FIRST, at EVERY update: `ArtifactData list collection:"answers"` AND `ArtifactData list collection:"fixes"`; act on
+new answers, carry new fix ticks into the status JSON, and tell Jeremy what you picked up (26021 ECM: answers sat
+unread until Jeremy asked; LESSONS O46). After hand-fix ticks, remind him to Synchronize (O40).
+Then edit the local status JSON, set `updated` to now (ISO UTC), then `ArtifactData set` with `file_path` and
 `if_version` = the last version. On a version conflict, `get` the doc, merge, retry once. No republish, so no prompt.
 Republish only to change the template itself (same file_path; omit `capabilities` so they carry forward).
 Before the final sync, `ArtifactData list collection:"fixes"` to see which hand fixes Jeremy has ticked, and say so.

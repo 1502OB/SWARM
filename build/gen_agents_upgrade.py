@@ -97,7 +97,12 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
      any other agent may be calling Revit: two batch_exports at once wrote nothing, then batch_export stuck on a stale
      reply and Revit crashed. The brief gives sheet ids (or PDFs): you have no number -> id lookup (Q27); if neither
      is given, ask; never guess an id.
-   - Revit, no PDFs given: {EXPORT} with format "PDF", the sheet id(s), paperSize "A0" (the largest the tool offers) and
+     Since 2026-11-20 (26021 ECM, LESSONS O39/R65) PDFs are always given for Revit: batch_export returned the previous
+     export's path three times even on an idle bridge. If none are given, write "unavailable" and ask the
+     orchestrator for a Document.Export script run (scripts/ECM-D2-T1.cs); use the fallback below only when the
+     orchestrator explicitly tells you to. Document.Export never overwrites (a re-export lands as <name>-1.pdf): use
+     the newest file for the sheet and say which one.
+   - Revit, no PDFs given (fallback only on the orchestrator's explicit instruction): {EXPORT} with format "PDF", the sheet id(s), paperSize "A0" (the largest the tool offers) and
      exportPath {SWARM}/visual/<run-id>/<task-id>/ (one folder per task: Revit names the file after the sheet
      title, and a title with "&" cannot pass your Bash guard, so you pass the folder, never the file name).
      The A0 page is 46.8 x 33.1 in and the sheet sits CENTRED AT 1:1 on it (Phase 6 test 2026-11-04: a 42x30
@@ -145,6 +150,11 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
    row band (an arc through a neighbouring row's text is a FAIL); a delta tag must not touch existing text, other tags
    or the sheet/title-block border lines; a note or label must not sit on a pipe. Judge viewport titles from the plot,
    not from GetLabelOutline.
+   Sheet text and schedules (LESSONS R93/R96/R97/R67, 2026-11-20, 26021 ECM): new notes stay inside the drawing area
+   (clear of the thick border line, not just the title-block box: the P001 note crossed it); after a sticky-schedule
+   edit check the text actually prints in the cell it was put in, that a deleted range took its titles AND rows,
+   that header rows do not clip their text and the schedule did not grow wider than the kept header; notes and
+   keyed-note tags must clear pipes, cleanouts/fixtures and other annotations.
 4. Write {MAN}/<task-id>.visual.json: {{"run_id","task_id","status":"PASS|FAIL|unavailable","reason":"plain
    language","crops":[paths],"export":"<pdf path>"}}.
 If no export tool works (or an AutoCAD task has no PDF), write status "unavailable" for every such task and say so
@@ -239,6 +249,16 @@ model point through both GetProjectionToSheetTransforms); a title off after a La
 label-outline corners); a template that forced its scale (R90: scale ids non-controlled, re-set Scale after the
 template); a missing viewport type (R91: CopyElements from the source); the source document not open (R92: link
 fallback). A timeout is not a script cause until a dialog (sync reminder, O23) and a stale reply (R88) are ruled out.
+2026-11-20 causes (LESSONS R37/R66/R75/R93-R99, 26021 ECM): a bare 'target of an invocation' on a link view (R37:
+LinkedViewId resolved in the host; use link.GetLinkDocument()); a resize that wandered into other networks or threw on
+Radius (R95: explicit element list; Radius only when Shape == Round && Domain == Piping; generic fittings via writable
+'Nominal Radius'; connector snapshots compared as unordered sets; {SWARM}/scripts/ECM-GAS-T1.v6.cs is the working
+pattern); a cascade gate that rejected a fitting's own centerline (R75: allow it); a note across the border or on a
+guessed table (R93: anchor to a named ScheduleSheetInstance, border from the PDF, >= 0.02 ft margin); blank sticky
+text (R96: Header section cells); a schedule that grew wide or clipped (R97: body widths, computed row heights); a
+'1' in a no-delta revision (R66: copy the sequence id from an existing row). An L5 'dryrun-order' warning on an
+own-Transaction script that rolls back on dryrun is not a cause (R99). For enum members revit_api_check.py reports
+NOT FOUND: grep the revit-api references/db-b-c.md for " NAME = " (R58).
 Cycle cap (R28/R57): you get cycles 1 and 2 only, and a dry-run-driven design iteration counts as a cycle. At the end
 of cycle 2, if the cause is geometry/design rather than an API fact, say "stop: ask Jeremy or change the approach"
 with the simpler option you see (fewer legs, a manual list). Every cycle writes a debug.json with the run id the

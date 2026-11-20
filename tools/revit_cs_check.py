@@ -270,8 +270,12 @@ def lint(path: str, code: str):
             add(warns, "L5-dryrun-branch", None, "dryrun is read but no `if (dry...)` branch was found: check the "
                 "dry run returns before any change")
         elif first_write < dpos.start():
+            own_rb = mode == "none" and starts and re.search(r"\.\s*RollBack\s*\(", b)
             add(warns, "L5-dryrun-order", first_write, "a model change appears before the first dry-run branch: "
-                "in a dry run nothing may change (auto mode commits it)")
+                "in a dry run nothing may change (auto mode commits it)" + (
+                    "; this script owns its Transaction and calls RollBack: if the dry run rolls that Transaction "
+                    "back with its status checked, this is the accepted own-Transaction pattern (LESSONS R99), "
+                    "a known false positive" if own_rb else ""))
     if "done=" not in code:
         add(errs if writes else warns, "L6-summary", None,
             "the return does not end with a `done=<n> skipped=<n> failed=<n>` line")

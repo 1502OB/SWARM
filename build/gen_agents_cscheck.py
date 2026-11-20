@@ -77,6 +77,21 @@ with the reason, not a FAIL. Never waive a compile error.
   assigned to views of mixed scale without the three VIEW_SCALE ids non-controlled and a Scale re-set + readback is
   major; creating viewports with a type that may be missing, without a CopyElements preflight, is major. Fallbacks (R85): a fallback position/value outside its expected.json item
   is major.
+- 2026-11-20 (26021 ECM; R99/R86): the own-Transaction pattern is ALLOWED for layout/sheet scripts and is not the
+  blocker above: transactionMode "none", ONE Transaction (no group around committed transactions), the dry run
+  performs everything, measures, then calls Transaction.RollBack() and checks the returned TransactionStatus. The
+  L5 'dryrun-order' lint warning on such a script is a known false positive: overrule it as minor with the quoted
+  Start/RollBack lines. Missing status check, or Commit() reachable on dryrun, stays a blocker.
+- 2026-11-20 (R37/R66/R93-R98): LinkedViewId resolved with the host document.GetElement is major (use
+  link.GetLinkDocument()); a new revision for a no-delta issue that does not copy RevisionNumberingSequenceId from an
+  existing row is major; sheet text anchored to a guessed table title or to the title-block bbox (not a named
+  ScheduleSheetInstance / measured border) or layout checks with < 0.02 ft margin are major; a pipe resize that walks
+  connectors through FamilyInstances, reads Connector.Radius without Shape == Round && Domain == Piping, leaves generic
+  fittings at the old size (no 'Nominal Radius' set) or compares connector snapshots in order is major; sticky-text
+  edits on the Body section instead of SectionType.Header are major; header-column trims that leave body widths
+  unscaled, or header row heights set without the computed height, are major; text notes moved between sheets other
+  than CopyElements one at a time + delete is minor. Enum members revit_api_check.py reports NOT FOUND are not
+  findings (it does not index enums, R58): the compile decides.
 - Cleanup script: deletes exactly the created elements,
   taking ids from parameters, and returns what it deleted.
 - The scripting-lessons pitfalls (systems merge on commit, cap placement, connector-based checks, namespaces, etc.).

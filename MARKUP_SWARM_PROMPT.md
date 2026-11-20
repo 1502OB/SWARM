@@ -190,7 +190,8 @@ Step 7: append a summary to REPORT.md (tasks, pass/fail, open items, wall-clock 
    debug cycles per task; if both fail, one scripter run on opus (model override), then mark the task FAIL and move
    on (FAILED SCRIPT above).
 5. Sheet exports for the visual check (fixed 2026-11-04): Revit, visual-verifier exports with batch_export itself
-   (since 2026-11-19 prefer a revit-writer Document.Export script and give the visual-verifier the PDFs: item 21a).
+   (since 2026-11-19 prefer a revit-writer Document.Export script and give the visual-verifier the PDFs: item 21a;
+   since 2026-11-20 never batch_export at all: item 22a).
    AutoCAD, first write the DSD with `python tools/acad_dsd.py "<dwg>" "<layout>" "visual/<run-id>/<task-id>/<task-id>.pdf"
    "visual/<run-id>/<task-id>/<task-id>.dsd"`, then run acad-writer on a task "<task-id>-PUB" (operation publish-sheet,
    assigned_agent acad-writer; it loads tools/swarm_publish.lsp and calls (swarm:publish dsd pdf), never saves).
@@ -359,3 +360,24 @@ Start by confirming both bridges respond, listing what is in inputs/, and asking
     h. Live tooling (O42): after a roll-in commit run `python build/gen_all.py` and `python build/sync_claude.py
        install`; before any `sync_claude.py pull` run `status` and pull only files you edited in ~/.claude (an 11-19
        pull put stale 11-09 hooks over the repo's 11-17 ones; VSV ran on agents generated 11-12).
+22. 26021 Erewhon Costa Mesa Site & Shell PC1, run 20261117-ECM (2026-11-20, LESSONS O39/O43-O49, R65, R99):
+    a. Exports (O39/R65): never use the batch_export MCP, for checks or for sets (it returned the previous path three
+       times on an idle bridge). A revit-writer runs a Document.Export + PDFExportOptions script (scripts/ECM-D2-T1.cs:
+       one sheet per call, Combine=true so FileName is honoured). Export never overwrites (appends -1): move or delete
+       stale files first. This replaces item 5's and 21a's batch_export fallback. One bridge client at a time: writer
+       OR export OR scout; offline agents (scripters, script-checkers, PDF readers) run in parallel.
+    b. Re-scout before scripting after any pause in which Jeremy may have edited the model (overnight, a question
+       round, his hand fixes): GCO-T1 was scripted while Jeremy had already placed the GCO (O43).
+    c. Folders and names (O44): list the target folder before creating one (a duplicate submittal folder was made);
+       follow the City's file naming over the neighbouring files.
+    d. Calcs read sizes and inputs from the live model (a scout or schedule export), never a marked-up older set (O45).
+    e. Run tracker (O46): read `answers` AND `fixes` at EVERY tracker update (run-tracker skill), not only at the end.
+    f. Scope (O47): an instruction Jeremy gives for one project stays in that project's STATUS.md / memory note; never
+       save it as a cross-project memory or LESSONS rule.
+    g. Outlook drafts with a signature or images (O48): never replace the body through the M365 connector (drops the
+       images). Edit in Outlook web via Chrome in place with real double/triple-click selection (JS selection + typing
+       did not register), leave the compose view so OWA saves (Ctrl+S did not), then read the saved server copy.
+    h. Letter builder (O49): run with PYTHONUTF8=1; tune --filler by exporting through Word COM and reading the
+       signature y (no LibreOffice).
+    i. Own-Transaction scripts (R99): for layout/sheet changes the scripter's dry run performs everything and rolls its
+       own Transaction back; script-checker overrules the L5 'dryrun-order' lint for it. The writer probe still runs.

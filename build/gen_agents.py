@@ -150,7 +150,10 @@ an export with a query alongside ended in a Revit crash that lost unsynced sheet
 runs. Scope queries to the task's ids (R89): a model-wide scan (e.g. all views to find callout parents) times out and
 jams the send_code queue for every later call; mark such a check "not checked: heavy scan". After any timeout,
 replies can lag one call (R88): start every send_code return with your task id + step marker, check that the reply
-you got carries it, and confirm state with a cheap read (Document.IsModified, an id count) instead of trusting it."""
+you got carries it, and confirm state with a cheap read (Document.IsModified, an id count) instead of trusting it.
+One bridge client at a time means writer OR export OR scout (26021 ECM 2026-11-17, O39): an export run while a writer
+was active returned a stale path, and batch_export returned the previous path even on an idle bridge, so never use
+batch_export for checks or sets. Offline agents (scripter, script-checker, PDF readers) can run in parallel."""
 REVIT_CODE_READ = ("mcp__revit-mcp__send_code_to_revit", "revit_readonly_code_guard.py")
 REVIT_SCOUT_HOOK = hooks(PROJECT_GUARD, REVIT_CODE_READ)
 
@@ -383,6 +386,14 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
   visual-verifier come from you (Q27). Report a get_warnings count of 500 as "capped" with the ids/descriptions (R52).
 - State probe (R77/R86): after a dry run the orchestrator may ask whether anything stayed: count what the task creates
   and read the changed values it lists, and report each as "as baseline" or "changed".
+- 2026-11-20 (26021 ECM; LESSONS R37/R93-R96/O43/O45): sheet text anchors are NAMED ScheduleSheetInstances with
+  their sheet extents (report the schedule name and every table inside it, not a guessed table title); sticky
+  (text) schedules hold their text in HEADER cells: read TableSectionData of SectionType.Header cell by cell
+  (get_schedule_data reads the body only) and say which cells print if a PDF is given. Cleanouts: match "CO"
+  or "CLEANOUT" case-insensitively in family AND type names; report positional groups ('west/east stubs') with XY
+  per element, not network numbers. Linked views: read LinkedViewId in link.GetLinkDocument(). Warnings over 500:
+  count with document.GetWarnings().Count. Pipe sizes for calcs come from you (the live model), never from an older
+  set (O45). A re-scout after a pause reports what changed since the earlier scout (O43: Jeremy had placed the GCO).
 
 {harden_scout("revit")}
 {COMMON}
@@ -531,8 +542,9 @@ Read those; do not look for a scout manifest that was not listed.
      - expected.json (R85): pre-existing counts come from the scout baseline (clouds per sheet over all revisions);
        every fallback position/value the script can take lies inside the matching expected item.
      2026-11-19 rules (LESSONS R76/R77/R82/R86-R92, 24-071 VSV sheet setup; details in scripting-lessons):
-     - Dry runs (R77/R86): view/sheet/viewport/title-block/name edits get a READ-ONLY dry run, no exceptions (VSV-P1-T1
-       attempt 3's commit-then-rollback left TB types, names, key plans, a deleted TB and moved viewports live).
+     - Dry runs (R77/R86): view/sheet/viewport/title-block/name edits get a READ-ONLY dry run (VSV-P1-T1 attempt 3's
+       commit-then-group-rollback left TB types, names, key plans, a deleted TB and moved viewports live). The one
+       exception is the own-Transaction pattern (R99, 2026-11-20) for layout/sheet changes that must be measured.
        Return the counts/values a post-dry-run probe needs (what the task creates and the first changed value per kind)
        so the writer can prove nothing stayed.
      - Matching another document's viewport (R87): never by box centre (box size includes annotation crop/extents;
@@ -557,6 +569,46 @@ Read those; do not look for a scout manifest that was not listed.
        in the return); never batch_export.
      - Warnings (R52): get_warnings caps at 500; when an expected item depends on new warnings, name them so the
        verifier compares ids/descriptions, not counts.
+     2026-11-20 rules (LESSONS R37/R66/R67/R75/R93-R99, O39/O43, 26021 ECM Site & Shell PC1; details in scripting-lessons):
+     - Own-Transaction pattern (R99): transactionMode "none"; one Transaction; the dry run performs EVERYTHING,
+       measures (positions, extents, overlaps, margins), then Transaction.RollBack() and checks the returned status
+       (never Commit inside a TransactionGroup and then group.RollBack(), R86). It is the only real test for
+       layout/sheet changes. revit_cs_check's L5 'dryrun-order' warning on it is a known false positive: say so in
+       your reply ("L5: own-Transaction dry run rolls back").
+     - Link views (R37): resolve RevitLinkGraphicsSettings.LinkedViewId in link.GetLinkDocument(), never in the host
+       document (host GetElement returned null; .Name threw a bare 'target of an invocation').
+     - Sheet text (R93): anchor to a NAMED ScheduleSheetInstance / element id from the scout, never a guessed table
+       title (the tables lived inside one 'Sticky-P0.5 Design Criteria' schedule). Drawing-area edges come from the
+       exported PDF border line as measured (the orchestrator or a scout gives it), not the title-block bbox plus a
+       guess. Layout checks keep >= 0.02 ft margin to every limit.
+     - New revisions on no-delta issues (R66): copy RevisionNumberingSequenceId from an existing row (InvalidElementId
+       = blank delta; a new revision got '1'). Never construct the id.
+     - Matching (R94): cleanouts = name contains "CO" or "CLEANOUT", case-insensitive ('FloorCleanout_Round1');
+       'west/east stub' and similar map by scout XY, never by network numbering. Placement obstacles (R67): pipe
+       centrelines buffered by OD/2 + 1/16 in paper, fixtures/accessories and ALL view annotations.
+     - Pipe resize (R95): an explicit element list from the scout (no connector walk through FamilyInstances: it
+       escaped through meters into other networks); Connector.Radius only when Shape == Round && Domain == Piping;
+       generic fittings: set the writable 'Nominal Radius' parameter (Double, any spec); recreate transitions; deleting
+       a fitting cascades its own centerline sub-element (OST_PipeFittingCenterLine, benign, R75); compare connector
+       snapshots as unordered sets. Start from {SCRIPTS}/ECM-GAS-T1.v6.cs.
+     - Sticky (text) schedules (R96): the text is in HEADER section cells: TableSectionData of SectionType.Header,
+       SetCellText. Before splitting text across cells, check which cells print (the scout or a PDF says). A range
+       delete removes the whole table body, titles AND their rows; the visual-verifier checks it on the export.
+     - Schedule size (R97): width follows the BODY columns: when trimming header columns, scale the body column widths
+       to the kept header width. Header row heights do not auto-fit (a small SetRowHeight stays small): compute
+       them from text length / column width (~10 chars/in at 3/32 in, 0.17 in per line + 0.08 in), only ever shrink.
+     - Moving sheet content (R98): schedules by ScheduleSheetInstance.Create on the new sheet then deleting the old
+       instance; text notes one at a time with ElementTransformUtils.CopyElements(view, ids, view,
+       Transform.Identity, opts) + delete the original. Combine/renumber sheets in ONE own-Transaction script with a
+       full dry run that rolls back.
+     - Warnings (R52): count with document.GetWarnings().Count in a read-only script (get_warnings stops at 500).
+     - Enum members (R58): revit_api_check.py does not index them; grep the revit-api skill's references/db-b-c.md
+       for " NAME = ", and let the revit_cs_check compile settle it.
+     - Exports (O39/R65): never batch_export, for checks or sets. Document.Export + PDFExportOptions
+       ({SCRIPTS}/ECM-D2-T1.cs: one sheet per call, Combine=true so FileName is honoured); Export never overwrites
+       (appends -1), so the script deletes or reports an existing file first and returns name + size.
+     - Stale scouts (O43): a scout older than the last pause (overnight, a question round, Jeremy's hand fixes) is
+       stale for every element you touch: ask for a re-scout instead of scripting from it.
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
    - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
@@ -768,6 +820,13 @@ Load the `revit-conventions` skill first.
   dry-run readback with expected.json; a scale the template overrode is NO_GO.
 - Exports (O39): an export task (e.g. a VSV-ENL-PDF.cs-type script) has its own task.json like any other; run it
   alone (no other agent on Revit), and report each file's existence and size from the script's return.
+- 2026-11-20 (26021 ECM; LESSONS O39/R65/R99/R75/R52): never call batch_export, for checks or sets (it returned the
+  previous path three times on an idle bridge); exports are Document.Export scripts (scripts/ECM-D2-T1.cs pattern).
+  Document.Export never overwrites (it appends -1): before an export, list the target folder and report any existing
+  file of the same name to the orchestrator (it moves stale files; you never delete). Own-Transaction scripts
+  (transactionMode none, R99): the dry run commits nothing and rolls its Transaction back; the post-dry-run probe
+  still runs. A fitting delete that cascades to its own OST_PipeFittingCenterLine is expected (R75). A warnings count
+  of exactly 500 is the get_warnings cap: take the uncapped count with a read-only document.GetWarnings().Count call.
 - {REVIT_SERIAL}
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", REVIT_SAVE_RULE)}
@@ -955,6 +1014,12 @@ anything in AutoCAD.
   At the get_warnings cap (500) equal counts prove nothing: compare warning ids/descriptions with the writer's
   pre-run list (R52). Cross-document positions are compared in sheet XY only (R87); viewport alignment is the
   difference of one model point through both viewports' GetProjectionToSheetTransform, tolerance 0.01 in.
+- 2026-11-20 (26021 ECM; LESSONS R52/R66/R94/R96/R97): a warnings count of exactly 500 is the get_warnings cap:
+  count with a read-only document.GetWarnings().Count. No-delta issues: check the revision's
+  RevisionNumberingSequenceId matches the existing rows and the sheets' GetAdditionalRevisionIds, never cloud counts.
+  Sticky (text) schedules: read the HEADER section cells (TableSectionData, SectionType.Header); whether a cell prints
+  and whether a header row clips are visual items (null "visual"). Resized pipes: check the generic fittings' 'Nominal
+  Radius' as well as the pipes, and compare connector sets unordered. Cleanouts match "CO" or "CLEANOUT" in any case.
 - Pipe system types (LESSONS R60/R73): after any retype, check the system type of the NEIGHBOURING connected pipes
   and the main as well as the retyped ones (25-076: one SetSystemType turned the building drain into VENT, tags read
   '4" V (0 FU)'). A per-pipe type that reverted is a FAIL.

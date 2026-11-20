@@ -253,3 +253,52 @@ Exports, warnings, bridge
   state with Document.IsModified or an id count (R88). Scope queries to the task's ids: a model-wide callout-parent
   scan timed out and jammed the queue for later calls (R89).
 - Revit's 'Changes Not Synchronized with Central' reminder blocks the bridge mid-run; Cancel lets it continue (O23).
+
+## Erewhon 26021 ECM lessons (2026-11-20; swarm/LESSONS.md R37/R52/R58/R66/R67/R75/R93-R99, O39; run 20261117-ECM)
+Dry runs for layout and sheet changes
+- Own-Transaction pattern (transactionMode none): one Transaction; the dry run performs everything, measures
+  (positions, extents, overlaps, margins), then Transaction.RollBack() and checks the returned status. It rolled back
+  cleanly on every ECM run and is the only real test for layout/sheet changes. Never Commit inside a TransactionGroup
+  and then group.RollBack() (R86). The writer still probes after the dry run (R77). revit_cs_check's L5
+  'dryrun-order' warning fires on this pattern: a known false positive (R99).
+Sheet text and schedules
+- Anchor notes to a NAMED ScheduleSheetInstance / element id from a scout, never a guessed table title: on P001 the
+  'FIXTURE UNIT REFERENCE' table lived inside one 'Sticky-P0.5 Design Criteria' schedule. Drawing-area edges come from
+  the exported PDF's border line (measure it), not the title-block bbox plus a guess (the B01 note crossed the thick
+  left border). Keep >= 0.02 ft margin to every limit in layout checks. A heading needs a bold 1/8 in text type:
+  create it when absent (R93).
+- Sticky (text) schedules hold their text in HEADER section cells; get_schedule_data reads the body (blank). Edit with
+  schedule.GetTableData().GetSectionData(SectionType.Header).SetCellText(r, c, text). Before splitting text across
+  cells, check which cells print (P000: r5c1 printed, a twin schedule's r4c1 did not). A range delete removes the whole
+  table body, titles AND their rows; verify on the export (R96).
+- Schedule width is driven by the BODY columns: when trimming header columns, scale the body column widths to the
+  kept header width. Header row heights do not auto-fit (a small SetRowHeight stays small and clips): compute from text
+  length / column width (~10 chars/in at 3/32 in text, 0.17 in per line + 0.08 in) and only ever shrink (R97).
+- Moving content between sheets: ScheduleSheetInstance.Create on the target sheet, then delete the old instance; text
+  notes one at a time with ElementTransformUtils.CopyElements(srcView, ids, dstView, Transform.Identity, opts) + delete
+  the original. Combine/renumber sheets in ONE own-Transaction script with a full dry run that rolls back (R98;
+  scripts/ECM-CMB-T1.cs).
+Revisions, links, matching
+- New revision on a no-delta issue: copy RevisionNumberingSequenceId from an existing row (its value was
+  InvalidElementId; copying it worked and blanked the '1'), never construct it (R66; scripts/ECM-D1-T2.cs).
+- RevitLinkGraphicsSettings.LinkedViewId lives in link.GetLinkDocument(); host document.GetElement returns null and the
+  .Name call throws a bare 'target of an invocation' (R37).
+- Cleanouts: name contains "CO" or "CLEANOUT", case-insensitive (storm COs are 'FloorCleanout_Round1 | TWO-WAY').
+  'West/east stubs' map by scout XY, never by network numbering (R94).
+- Annotation obstacles: pipe centrelines buffered by OD/2 + 1/16 in paper, fixtures/accessories and all view
+  annotations (R67).
+Pipe resize (scripts/ECM-GAS-T1.v6.cs, 6 attempts)
+- Explicit element list from the scout; no connector walk through FamilyInstances (v1 escaped through gas meters and
+  tenant boxes into other networks).
+- Connector.Radius only when Shape == ConnectorProfileType.Round && Domain == Domain.DomainPiping (v2 threw).
+- Resizing pipes does not resize generic fittings: set their writable 'Nominal Radius' (Double; any spec, not only
+  Length: v4 skipped it); recreate transitions; delete redundant ones and ConnectTo (v3, v6).
+- Deleting a fitting cascades to its own centerline sub-element (OST_PipeFittingCenterLine): benign (R75; v5's gate
+  rejected it). Compare connector snapshots as unordered sets (v5 compared in connector order) (R95).
+Exports, warnings, API checks
+- Never batch_export, for checks or sets: it returned the previous path three times on an idle bridge. Document.Export
+  + PDFExportOptions, one sheet per call, Combine=true so FileName is honoured (scripts/ECM-D2-T1.cs). Export never
+  overwrites (it appends -1): delete or move stale files first and check name + size (O39, R65).
+- get_warnings returning exactly 500 is its cap: count with document.GetWarnings().Count (R52).
+- revit_api_check.py does not index enum members (BuiltInParameter.*, BuiltInCategory.* report NOT FOUND): grep
+  revit-api references/db-b-c.md for " NAME = "; the revit_cs_check compile decides (R58).

@@ -41,6 +41,12 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
   scripting-lessons "Village 24-071 VSV").
 - One Revit job at a time, exports included; visual PDFs from a read-only Document.Export script, not batch_export;
   scoped queries only, no model-wide scans; after a timeout check each reply is the one you asked for (O39, R88, R89).
+- Layout/sheet changes that must be measured use the own-Transaction pattern: transactionMode none, one Transaction,
+  the dry run does everything, measures, then Transaction.RollBack() with its status checked (R99; L5 'dryrun-order'
+  is a known false positive for it). Never batch_export, for checks or sets: Document.Export never overwrites (-1).
+- Sheet text anchors to a named ScheduleSheetInstance; drawing-area edges from the plotted border; sticky schedule
+  text is in Header cells; schedule width follows the body columns; header row heights never auto-fit (R93, R96,
+  R97; details in scripting-lessons "Erewhon 26021 ECM").
 
 ## Revision clouds via the API
 - Draw the boundary loop **CLOCKWISE**: bottom-left → top-left → top-right → bottom-right → back to bottom-left.
