@@ -45,6 +45,8 @@ API_CHECK = path_re(CLAUDE, "skills/autocad-api/scripts/acad_api_check.py")
 LSP_CHECKS = [script(API_CHECK), script(sw("tools/lsp_collide.py"))]
 # 2026-11-11: offline compile + contract lint of Revit C# (plugin's Roslyn, RevitAPI 2025; no Revit needed).
 CS_CHECK = script(sw("tools/revit_cs_check.py"))
+# 2026-11-20 (LESSONS R58): scripter + script-debugger run the Revit API member checker themselves.
+REVIT_API_CHECK = script(path_re(CLAUDE, "skills/revit-api/scripts/revit_api_check.py"))
 
 PROFILES = {
     "doc-scout": [
@@ -63,11 +65,11 @@ PROFILES = {
     "snapshot-taker": [script(sw("tools/snapshot_backup.py"))],
     "visual-verifier": [script(sw("tools/visual_crop.py"))],
     "script-debugger": [script(sw("tools/lspcheck.py")), script(sw("validate.py")),
-                        script(sw("tools/lsp_lint.py")), script(sw("tools/lsp_dryrun.py"))] + LSP_CHECKS + [CS_CHECK],
+                        script(sw("tools/lsp_lint.py")), script(sw("tools/lsp_dryrun.py"))] + LSP_CHECKS + [CS_CHECK, REVIT_API_CHECK],
     "filer": [script(sw("tools/file_deliverable.py"))],
     # 2026-11-06: scripter checks its own AutoLISP before handing it back (lint + headless dry run on a drawing copy)
     "scripter": [script(sw("tools/lsp_lint.py")), script(sw("tools/lsp_dryrun.py")),
-                 script(sw("validate.py"))] + LSP_CHECKS + [CS_CHECK],
+                 script(sw("validate.py"))] + LSP_CHECKS + [CS_CHECK, REVIT_API_CHECK],
     # 2026-11-11: offline gate before any Revit run; revit-writer compiles the exact file right before its dry run
     "script-checker": [CS_CHECK, script(sw("validate.py"))],
     "revit-writer": [script(sw("validate.py")), CS_CHECK],
