@@ -2,6 +2,11 @@
   "worktree": {
     "bgIsolation": "none"
   },
+  "permissions": {
+    "allow": [
+      "mcp__chatgpt__chatgpt"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
