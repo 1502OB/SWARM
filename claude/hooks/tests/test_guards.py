@@ -202,6 +202,10 @@ run(WG, ["script-debugger"], "Edit", {"file_path": f"{SW}/scripts/C22-R8-T1.v11.
 run(WG, ["script-debugger"], "Write", {"file_path": f"{MANS}/C22-R8-T1.debug.json"}, ALLOW, "debugger: Write debug.json")
 run(WG, ["script-debugger"], "Edit", {"file_path": f"{MANS}/C22-R8-T1.verify.json"}, BLOCK, "debugger: Edit verify.json")
 run(WG, ["script-debugger"], "Edit", {"file_path": f"{SW}/build/gen_agents.py"}, BLOCK, "debugger: Edit build/gen_agents.py")
+# ChatGPT second-opinion log (R100, 2026-11-20)
+run(WG, ["script-debugger"], "Write", {"file_path": f"{MANS}/C22-R8-T1.chatgpt.json"}, ALLOW, "debugger: Write chatgpt.json")
+run(WG, ["scripter"], "Write", {"file_path": f"{MANS}/C22-R8-T1.chatgpt.json"}, BLOCK, "scripter: Write chatgpt.json (debugger only)")
+run(WG, ["script-checker"], "Write", {"file_path": f"{MANS}/C22-R8-T1.chatgpt.json"}, BLOCK, "script-checker: Write chatgpt.json")
 
 # ---- writer_guard acad-ops close (Jeremy D2, 2026-11-09) ----
 CLOSE = ('(if (and (eq (vla-get-Saved (setq d (vla-item (vla-get-documents (vlax-get-acad-object)) '

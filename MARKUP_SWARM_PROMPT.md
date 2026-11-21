@@ -168,12 +168,19 @@ Step 5: execute the approved plan using `tools/run_queue.py <project>/manifests/
   writer for that task without the user's go-ahead.
   FAILED SCRIPT (LESSONS.md R28, revised 2026-11-04 per swarm-upgrade-handoff). On a compile error, a dry run that
   fails its GO conditions, a writer status failed/rolled_back, or a verifier FAIL:
-  1. script-debugger (sonnet), at most 2 debug cycles per task. Give it the run id, task id, cycle number,
-     write.json + write.log.md, the failing script, verify.json if any, and any logs/ file. It writes
-     scripts/<task>.v<n>.* and manifests/<task>.debug.json (cause, landed_in_model, confidence, lesson).
-  2. If script-debugger fails twice on the same task, re-run scripter for that task with an explicit model override
-     "opus" (fix mode, one attempt), then return to sonnet for the next task.
-  3. If that also fails, mark the task FAIL and move on (it goes in the report and the letter as pending).
+  Order (Jeremy 2026-11-20, LESSONS R100): sonnet debugger -> opus -> ChatGPT-assisted debugger -> FAIL.
+  Give every agent below the run id, task id, write.json + write.log.md, the failing script, verify.json if any,
+  and any logs/ file.
+  1. Failure 1: script-debugger (sonnet), cycle 1. It writes scripts/<task>.v<n>.* and manifests/<task>.debug.json
+     (cause, landed_in_model, confidence, lesson).
+  2. Failure 2: re-run scripter for that task with an explicit model override "opus" (fix mode, one attempt; give it
+     the cycle-1 debug.json too), then return to sonnet for the next task. No ChatGPT here.
+  3. Failure 3: script-debugger (sonnet), cycle 2, with the opus version and reply. Before it writes the fix it asks
+     ChatGPT once (mcp__chatgpt__chatgpt) for a second opinion and logs it in manifests/<task>.chatgpt.json. Tell it
+     if ChatGPT was unavailable earlier in the run (plan limit, not signed in) so it skips the call. ChatGPT answers
+     are suggestions: its members still go through the checkers, and it never replaces the precheck / dry run /
+     verify gates or Jeremy's go for anything that may have landed.
+  4. Failure 4: mark the task FAIL and move on (it goes in the report and the letter as pending).
   - Each fixed version goes through lspcheck (AutoCAD), dry run, writer, visual-verifier, verifier as usual.
   - If anything may have landed (debug.json landed_in_model maybe/yes, PARTIAL, TIMEOUT): show Jeremy the cause and
     the new version and wait for his go before any writer runs it (the TIMEOUT rule above).
@@ -213,8 +220,8 @@ Step 7: run `tools/run_queue.py <queue.json> report` and add the task timings to
    outside edits, reopen, or unclear impact including syncs that may have brought in outside changes.
    An export alone does not invalidate model evidence.
 4. When a writer reports failure, hand the write.json and the failing script to script-debugger. Allow at most 2
-   debug cycles per task; if both fail, one scripter run on opus (model override), then mark the task FAIL and move
-   on (FAILED SCRIPT above).
+   debug cycles per task, in the order debugger cycle 1 -> one scripter run on opus (model override) -> debugger
+   cycle 2 with the ChatGPT consult -> mark the task FAIL and move on (FAILED SCRIPT above).
 5. For Revit visual checks, dispatch a separate revit-writer export stage using
    `library/revit/export-visual-sheet.cs` as the export task's versioned script for precheck. Pre-create a fresh
    `visual/<run-id>/<export-stage>/<attempt>/` folder and supply an exact absent PDF path per sheet. Check the

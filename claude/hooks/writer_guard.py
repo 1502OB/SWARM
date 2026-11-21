@@ -27,7 +27,7 @@
 6. (2026-11-09) acad-ops may close a drawing (Jeremy D2) only with the exact ACAD_CLOSE_RE form: Saved = :vlax-true,
    not the active drawing, (vla-Close d :vlax-false); the orchestrator sends it only on an explicit close step.
    `writer_guard.py scripter|script-debugger` (Jeremy D1) on Write|Edit: Edit only swarm/scripts/*.lsp and the
-   agent's own manifests (<task-id>.expected.json; debugger also .debug.json); Write only into swarm/scripts/ and
+   agent's own manifests (<task-id>.expected.json; debugger also .debug.json and .chatgpt.json); Write only into swarm/scripts/ and
    those manifests. Paths come from hooks/paths.py (SWARM_HOME, else ~/swarm).
 Exit code 2 blocks the call and feeds stderr back to the agent.
 """
@@ -194,7 +194,7 @@ def main():
 # manifests folder (swarm/<project>/manifests or the legacy swarm/manifests), named <task-id>.<kind>.json.
 OWN_MANIFESTS = {
     "scripter": ("expected",),
-    "script-debugger": ("debug", "expected"),
+    "script-debugger": ("debug", "expected", "chatgpt"),  # chatgpt: cycle-2 second opinion log (R100, 2026-11-20)
     # 2026-11-11: the offline Revit script gate writes its verdict only; it never touches a script.
     "script-checker": ("precheck",),
 }
