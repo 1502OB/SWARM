@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from guardlib import strip_cs  # noqa: E402
+from guardlib import revit_code, strip_cs  # noqa: E402
 
 DENY = re.compile(
     r"\b(Transaction|SubTransaction|TransactionGroup|TransactionStatus|"
@@ -39,7 +39,10 @@ def main():
     ti = payload.get("tool_input") or {}
     if ti.get("transactionMode") != "none":
         block('set transactionMode to "none"; the verifier may only run read-only code')
-    m = DENY.search(strip_cs(str(ti.get("code", ""))))
+    code, err = revit_code(ti)
+    if err:
+        block(err)
+    m = DENY.search(strip_cs(code))
     if m:
         block(f"code references '{m.group(1)}'; read-only inspection code only")
     sys.exit(0)

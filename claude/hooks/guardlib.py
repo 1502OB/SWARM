@@ -110,3 +110,36 @@ def lisp_command_strings(code: str):
         else:
             out.append("<dynamic>")
     return out
+
+
+# ---- send_code_to_revit codeFile (2026-11-25, LESSONS R70/R72): the patched revit-mcp server accepts codeFile, an
+# absolute path to a .cs file, and reads it itself, so writers no longer retype long scripts. Every guard judges the
+# FILE's text exactly as it would judge inline code. Allowed: one of code / codeFile; codeFile absolute, *.cs, under
+# the swarm folder, at most 1 MB, readable. Anything else is reported as an error and the caller blocks.
+CODE_FILE_MAX = 1_000_000
+
+
+def revit_code(ti):
+    """(code_text, error). error is None when the call's code (inline or from codeFile) can be judged."""
+    import os
+    from paths import SWARM  # noqa: E402  (hooks dir is on sys.path for every guard)
+    cf = ti.get("codeFile")
+    inline = str(ti.get("code") or "")
+    if cf in (None, ""):
+        return inline, None
+    if inline.strip():
+        return "", "pass either code or codeFile, not both"
+    cf = str(cf)
+    p = os.path.abspath(cf)
+    if not os.path.isabs(cf) or not p.lower().endswith(".cs"):
+        return "", f"codeFile must be an absolute path to a .cs file ({cf})"
+    root = os.path.abspath(str(SWARM)).rstrip("\/").lower() + os.sep
+    if not p.lower().startswith(root):
+        return "", f"codeFile must be under {SWARM} ({cf})"
+    try:
+        if os.path.getsize(p) > CODE_FILE_MAX:
+            return "", f"codeFile is larger than {CODE_FILE_MAX} bytes"
+        with open(p, encoding="utf-8-sig", errors="strict") as f:
+            return f.read(), None
+    except (OSError, UnicodeDecodeError) as e:
+        return "", f"cannot read codeFile {cf}: {e}"

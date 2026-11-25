@@ -66,8 +66,9 @@ with the reason, not a FAIL. Never waive a compile error.
   `done=<n> skipped=<n> failed=<n>`. Record expected_covered yes|partial|no|no_expected.
 - Return size (R59): `done=` line FIRST, then cleanup_params, and <= 2.3 KB on EVERY path incl. NO_GO and
   ROLLED_BACK (the bridge cuts at ~3 KB; a return that could exceed it is major). Long lists as counts.
-- Size (R72): over ~450 lines / ~12k tokens (chars/4) is major "split into staged tasks" (the writer must send it
-  verbatim); line 1 should be the "// <task-id> v<n>" marker (minor).
+- Size (R72, codeFile 2026-11-25): the writer sends the file by path, so length alone is not a finding up to
+  ~1500 lines; above that, or a script mixing deletes with new geometry in one dry run, is major "split into staged
+  tasks". A missing line-1 "// <task-id> v<n>" marker is major (the writer passes it as expectMarker).
 - Sheet mapping (R82): GetProjectionToSheetTransform applied to model/view points for an ABSOLUTE sheet position is
   major; use {SWARM}/library/revit/model-to-sheet.cs. Allowed (R87): the DIFFERENCE of one model point through two
   viewports (cross-document alignment) when the script checks both views are unrotated, same scale and the link

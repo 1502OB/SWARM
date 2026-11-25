@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from guardlib import lisp_command_strings, strip_cs, strip_lisp_comments  # noqa: E402
+from guardlib import lisp_command_strings, revit_code, strip_cs, strip_lisp_comments  # noqa: E402
 from paths import SWARM, fwd, norm  # noqa: E402  (2026-11-09: no hard-coded user folder)
 
 LOCKS = Path(os.environ.get("SWARM_LOCKS_DIR", fwd(SWARM / "locks")))  # override for hook tests only
@@ -153,7 +153,9 @@ def main():
     check_lock(app)
 
     if app == "revit" and tool == prefix + "send_code_to_revit":
-        code = str(ti.get("code", ""))
+        code, err = revit_code(ti)
+        if err:
+            block(err)
         bare = strip_cs(FAMILY_LOAD_OPTIONS_OK.sub("IFLO_METHOD", code))
         m = REVIT_DENY.search(bare) or REFLECTION_DENY.search(bare)
         if m:
@@ -317,7 +319,9 @@ def ops_main():
         block("revit-ops uses send_code_to_revit only (identity checks and file operations)")
     if ti.get("transactionMode") != "none":
         block('revit-ops must use transactionMode "none" (no model edits)')
-    code = str(ti.get("code", ""))
+    code, err = revit_code(ti)
+    if err:
+        block(err)
     m = OPS_DENY.search(strip_cs(code)) or REFLECTION_DENY.search(strip_cs(code))
     if m:
         block(f"code references '{m.group(0).strip()}'; revit-ops never edits the model (that is revit-writer's job)")

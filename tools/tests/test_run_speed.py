@@ -1,4 +1,5 @@
 """Regressions for queue gates, stale evidence, compiler reuse and parallel QA/QC prep."""
+import hashlib
 import contextlib
 import io
 import json
@@ -113,6 +114,30 @@ def test_compile_reuse_binds_run_toolchain_and_exact_script_and_cleanup():
             cleanup.write_bytes(b'return "changed cleanup";\n')
             assert invoke()[0] == 3
             assert compile.call_count == 2
+
+
+def test_emit_file_gives_codefile_args_not_code():
+    """R70/R72 (2026-11-25): --emit-file returns sha256 + absolute path + line-1 marker, never the script text."""
+    rc = revit_cs_check
+    with TemporaryDirectory() as temp:
+        folder = Path(temp)
+        script = folder / "T-1.cs"
+        script.write_bytes(b'// T-1 v3\r\nreturn "done";\r\n')
+        precheck = folder / "precheck.json"
+        digest = rc.read_source(script)[0]
+        precheck.write_text(json.dumps({"status": "PASS", "run_id": "run", "task_id": "T-1", "toolchain": "current",
+                                        "scripts": [{"path": str(script), "sha256": digest, "compile": "PASS"}]}),
+                            encoding="utf-8")
+        out = io.StringIO()
+        args = [str(script), "--reuse-precheck", str(precheck), "--run-id", "run", "--task-id", "T-1", "--emit-file"]
+        with patch.object(rc, "toolchain_key", return_value="current"), patch.object(rc, "check", return_value=[]):
+            with contextlib.redirect_stdout(out):
+                status = rc.main(args)
+        res = json.loads(out.getvalue())
+        assert status == 0 and "code" not in res
+        assert res["sha256"] == hashlib.sha256(script.read_bytes()).hexdigest() == digest
+        assert res["expectMarker"] == "// T-1 v3" and Path(res["codeFile"]).is_absolute()
+        assert Path(res["codeFile"]) == script.absolute()
 
 
 def make_sheet(path, number, body="body"):

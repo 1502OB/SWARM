@@ -3,6 +3,7 @@
 ;;; no script globals, every setting is a parameter. Tests: test_swarm_lib.lsp (run headless with tools/lsp_dryrun.py).
 ;;; 2026-11-09 (Mansfield retro, LESSONS A32-A50): swl:swarm-dir, swl:result-out, swl:mtext-box / -bottom, swl:ebox,
 ;;; swl:group-box, swl:clash-ex, swl:inside-vp-tol, swl:floating-vps, swl:vp-msbox, swl:on-sheet-p.
+;;; 2026-11-25 (22-022 retro P11/P12/P16, LESSONS A53): swl:delete-verified, swl:copy-text, swl:plot-prep/-restore.
 ;;; Load:  (load (strcat (swl:swarm-dir) "library/acad/swarm_lib.lsp"))  before the task script; never redefine swl:*.
 ;;;        (swl:swarm-dir) = the SWARM_HOME environment variable if set, else %USERPROFILE%/swarm/. Before the first
 ;;;        load swl:swarm-dir does not exist yet, so build the same path by hand: (getenv "SWARM_HOME"), else
@@ -383,5 +384,70 @@
     (setq i (1+ i)))
   (if (/= w "") (setq r (cons w r)))
   (if r (reverse r) (list "")))
+
+;; ---------------------------------------------------------------- 22-022 helpers (2026-11-25, LESSONS A53)
+;; P11: delete with vla-Delete and count only what vlax-erased-p confirms (entdel reported deleted=3 while all 3
+;; stayed live). xs = handles / enames / vla objects. Returns (deleted-handles failed-handles); an already-erased
+;; or missing item is "failed" so CLEAN never counts it twice.  [AX]
+(defun swl:delete-verified (xs / o h r ok bad)
+  (foreach x xs
+    (setq h (cond ((= (type x) 'STR) x)
+                  ((setq o (swl:->obj x)) (vla-get-Handle o))
+                  (T "?"))
+          o (swl:->obj x))
+    (if (and o (not (vlax-erased-p o)))
+      (progn
+        (setq r (vl-catch-all-apply 'vla-Delete (list o)))
+        (if (and (not (vl-catch-all-error-p r)) (vlax-erased-p o)) (setq ok (cons h ok)) (setq bad (cons h bad))))
+      (setq bad (cons h bad))))
+  (list (reverse ok) (reverse bad)))
+
+;; P12: new TEXT/MTEXT made with AddText/AddMText or entmake did not plot on P012 (cause unknown). Make new text as a
+;; vla-Copy of a PLOTTING text of the same kind in the same space, then set the string and move it so its insertion
+;; point lands on pt. src = handle / ename / object of that TEXT or MTEXT. Returns the new handle, or "ABORT ...".
+;; Still test-plot the result (PASS_API_ONLY never proves it prints).  [AX]
+(defun swl:copy-text (src str pt / o n ip r)
+  (setq o (swl:->obj src))
+  (cond
+    ((not o) "ABORT copy-text: source not found")
+    ((not (member (vla-get-ObjectName o) (list "AcDbText" "AcDbMText")))
+     (strcat "ABORT copy-text: source is " (vla-get-ObjectName o) ", not TEXT/MTEXT"))
+    ((vl-catch-all-error-p (setq n (vl-catch-all-apply 'vla-Copy (list o))))
+     (strcat "ABORT copy-text: " (vl-catch-all-error-message n)))
+    (T
+     (vla-put-TextString n str)
+     (setq ip (vlax-get n 'InsertionPoint))
+     (setq r (vl-catch-all-apply 'vla-Move
+               (list n (vlax-3d-point ip) (vlax-3d-point (list (car pt) (cadr pt) (if (caddr pt) (caddr pt) (caddr ip)))))))
+     (if (vl-catch-all-error-p r)
+       (progn (vl-catch-all-apply 'vla-Delete (list n)) (strcat "ABORT copy-text move: " (vl-catch-all-error-message r)))
+       (vla-get-Handle n)))))
+
+;; P16 check plots: everything around the firm's plot call (_plot1 in plotfns.lsp, or a -PUBLISH known to work).
+;; swl:plot-prep sets CTAB to layout, forces paper space (MSpace off, CVPORT 1: P101-W plotted bare model space with
+;; a floating viewport active), regenerates all viewports and makes outdir. Returns the saved state for
+;; swl:plot-restore, or "ABORT ...". swl:plot-restore puts CTAB and BACKGROUNDPLOT back (plotfns leaves it 0).
+;; A bridge timeout on the plot itself is normal: compare the PDF size with a previous good plot.  [AX]
+(defun swl:plot-prep (layout outdir / st r)
+  (setq st (list (getvar "CTAB") (getvar "BACKGROUNDPLOT")))
+  (cond
+    ((not (member layout (layoutlist))) (strcat "ABORT plot-prep: no layout " (swl:san layout)))
+    (T
+     (setvar "CTAB" layout)
+     (vl-catch-all-apply 'vla-put-MSpace (list (swl:doc) :vlax-false))
+     (vl-catch-all-apply 'setvar (list "CVPORT" 1))
+     (vla-Regen (swl:doc) acAllViewports)
+     (if (and outdir (not (vl-file-directory-p outdir))) (vl-mkdir outdir))
+     (cond
+       ((/= (strcase (getvar "CTAB")) (strcase layout)) (strcat "ABORT plot-prep: CTAB stayed " (getvar "CTAB")))
+       ((and outdir (not (vl-file-directory-p outdir))) (strcat "ABORT plot-prep: cannot make " (swl:san outdir)))
+       (T st)))))
+(defun swl:plot-restore (st)
+  (if (listp st)
+    (progn
+      (if (member (car st) (cons "Model" (layoutlist))) (setvar "CTAB" (car st)))
+      (setvar "BACKGROUNDPLOT" (cadr st))
+      "restored")
+    "nothing to restore"))
 
 (princ)

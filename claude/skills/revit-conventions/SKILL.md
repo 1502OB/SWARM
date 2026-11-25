@@ -32,7 +32,8 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
   display, schedule filters, shared parameters, grayscale PDF export). New Revit lessons go there.
 - Check every API member in the `revit-api` skill.
 - An index (cache/revit-index.json) from another document is not evidence; rebuild it (LESSONS O34).
-- Keep a script under ~450 lines with its return tail-first and <= 2.3 KB (R59/R72); view/sheet/annotation dry runs
+- Stage scripts by concern (delete vs create; writers send by codeFile, so no ~450-line cap) with the return
+  tail-first and <= 2.3 KB (R59/R72); view/sheet/annotation dry runs
   are read-only, and commit-then-rollback dry runs re-read the model after RollBack (R77).
 - After EVERY dry run the writer probes read-only that nothing stayed (counts of what the task creates, one changed
   value per kind): a view/sheet dry run persisted again on 24-071 VSV-P1-T1 (R77/R86, 2026-11-19).
@@ -96,5 +97,7 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
 - Never run a write without a snapshot for the current run id.
 - A revision cloud task is not complete until the revision is in the sheet's revision schedule and the cloud is tagged.
 - Before the first Revit call of a run, confirm the bridge is on the intended document (Document.Title + Revit
-  version vs project.json); on a mismatch check every Addins/<year>/revit_mcp_plugin/mcp-port.txt for a stale port
-  (LESSONS O37).
+  version vs project.json); on a mismatch run revit_instance status/list (the patched server already skips a port file
+  whose port does not answer) and check every Addins/<year>/revit_mcp_plugin/mcp-port.txt (LESSONS O37).
+- Writers send scripts by path: send_code_to_revit codeFile + expectSha256 + expectMarker from
+  `revit_cs_check.py --emit-file`, never retyped code (LESSONS R70/R72).

@@ -2,6 +2,10 @@
 
     python tools/revit_cs_check.py <script.cs> [<script.cs> ...] [--json <out.json>] [--quiet]
     python tools/revit_cs_check.py <script.cs> --reuse-precheck <precheck.json> --run-id <id> --task-id <id> --emit-code
+    python tools/revit_cs_check.py <script.cs> --reuse-precheck <precheck.json> --run-id <id> --task-id <id> --emit-file
+    (--emit-file, 2026-11-25 R70/R72: prints sha256, the absolute codeFile path and the line-1 marker instead of the
+     code; the writer passes them as send_code_to_revit codeFile / expectSha256 / expectMarker, so the script text
+     never enters the writer's context and is never retyped. Needs the codefile bridge patch.)
     python tools/revit_cs_check.py --selftest
 
 What it does (2026-11-11):
@@ -427,10 +431,11 @@ def main(argv):
     quiet = "--quiet" in argv
     evidence = "--evidence" in argv
     if "--reuse-precheck" in options:
-        if not all(flag in options for flag in ("--run-id", "--task-id")) or "--emit-code" not in argv:
-            sys.exit("revit_cs_check: reuse requires --run-id, --task-id, and --emit-code")
-    elif "--emit-code" in argv:
-        sys.exit("revit_cs_check: --emit-code requires a verified precheck")
+        if not all(flag in options for flag in ("--run-id", "--task-id")) or not (
+                "--emit-code" in argv or "--emit-file" in argv):
+            sys.exit("revit_cs_check: reuse requires --run-id, --task-id, and --emit-code or --emit-file")
+    elif "--emit-code" in argv or "--emit-file" in argv:
+        sys.exit("revit_cs_check: --emit-code / --emit-file require a verified precheck")
     paths = [a for a in argv if not a.startswith("--")]
     if not paths:
         print(__doc__)
@@ -454,7 +459,14 @@ def main(argv):
             matches = False
         if matches:
             digest, code = sources[paths[0]]
-            print(json.dumps({"status": "PASS", "precheck_reused": True, "sha256": digest, "code": code}))
+            if "--emit-file" in argv:
+                first = code.split("\n", 1)[0].strip()
+                print(json.dumps({"status": "PASS", "precheck_reused": True, "sha256": digest,
+                                  "codeFile": os.path.abspath(paths[0]),
+                                  "expectMarker": first if first.startswith("//") else None,
+                                  "lines": code.count("\n") + 1}))
+            else:
+                print(json.dumps({"status": "PASS", "precheck_reused": True, "sha256": digest, "code": code}))
             return 0
         print("Precheck missing or changed. Recompiling for diagnostics. A fresh script-checker PASS is required.")
     res = check(paths, sources)

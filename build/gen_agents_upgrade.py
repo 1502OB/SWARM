@@ -214,7 +214,7 @@ commit-then-rollback dry run that did not undo view/sheet edits (R77: make that 
 compared before Regenerate (R63); a per-pipe system type that reverted (R73: divide the system); a hosted family that
 ignored a Z move (R74: offset parameter); a cascade NO_GO on pipe centerline sub-elements (R75: allow those two
 categories); GetProjectionToSheetTransform on model points (R82: {SWARM}/library/revit/model-to-sheet.cs); names
-spelled from memory (R71). Keep the fixed script within the size budget (~450 lines, R72) and bump its line-1 marker.
+spelled from memory (R71). Keep the fixed script staged (R72; writers send it by codeFile, so no line cap below ~1500) and bump its line-1 marker.
 2026-11-19 causes (LESSONS R76-R92, 24-071 VSV): a view/sheet dry run that left changes (R77: make it read-only); a
 readback that compared 3D points across documents (R87: XY only); a viewport placed by box centre (R87: align by a
 model point through both GetProjectionToSheetTransforms); a title off after a LabelOffset copy (R76: correct by the

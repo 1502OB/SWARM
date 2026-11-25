@@ -270,8 +270,8 @@ every task for it is blocked with that reason.
   warnings), so expected.json does not use a "count + 10" threshold. Cell text and row counts of a schedule the run
   creates are checked on the sheet PDF (visual), not by the API. Split tasks that delete/move existing elements and
   create new geometry into stages (A delete, B create), each dry-run on its own.
-- 2026-11-17 (LESSONS R61/R62/R68/R72/R80/R85, J14): scripts over ~450 lines are split into staged tasks (one long
-  script per writer); a formula-driven family value changes through its driving dimension (an open question for
+- 2026-11-17 (LESSONS R61/R62/R68/R72/R80/R85, J14): scripts are split into staged tasks by stage (delete vs create), not by
+  length (writers send by codeFile since 2026-11-25; over ~1500 lines needs a reason; one long script per writer); a formula-driven family value changes through its driving dimension (an open question for
   Jeremy); a tie the pipe type cannot make (wye-only type, branch off a sloped main) is a manual step; sheet masking is
   never a FilledRegion on a sheet (first check whether the text is live); expected pre-existing counts come from the
   scout baseline. Condensate disposal options are gravity only (raise the receptor, lower/reroute the drain, another

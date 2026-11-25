@@ -16,6 +16,15 @@ Idempotent; keeps index.js.orig next to the bundle the first time. Re-run after 
 Usage: python tools/patch_revit_mcp.py [--check] [--restore]
        python tools/patch_revit_mcp.py --health-only [--check|--restore]
 The health patch adds get_project_info(health=true) with a five-second budget and a request marker.
+       python tools/patch_revit_mcp.py --codefile-only [--check|--restore]
+The codefile patch (2026-11-25, LESSONS R70/R72/O37):
+  - send_code_to_revit takes codeFile (absolute path to a .cs under the swarm folder) instead of code; the server
+    reads the file, so writers never retype a long script. Optional expectMarker (text the file must contain) and
+    expectSha256 (the gate's sha256 of the file bytes); CRLF is normalised to LF as the gate does.
+    The swarm guards read the same file (guardlib.revit_code) and judge it exactly like inline code.
+  - With no pin and no REVIT_MCP_PORT, the port comes from the first mcp-port.txt (2027 -> 2023) whose port
+    actually answers, so a stale file left by a closed Revit no longer wins over the running one.
+Install it after the base patch (it needs resolveRevitPortInfo / tcpOpen from the base patch).
 Running sessions keep the old code until their revit-mcp server restarts (/mcp reconnect or new session).
 """
 import os
@@ -237,7 +246,123 @@ def install_health(bundle, check=False, restore=False):
     return 0
 
 
+CODEFILE_MARK = "/* swarm-codefile-portprobe v1 */"
+CODEFILE_HELPERS = CODEFILE_MARK + r"""
+import { createHash as swarmCreateHash } from "crypto";
+function swarmPortFileCandidates() {
+  const appData = process.env.APPDATA || "";
+  const out = [];
+  for (const year of ["2027", "2026", "2025", "2024", "2023"]) {
+    const portFile = join(appData, "Autodesk", "Revit", "Addins", year, "revit_mcp_plugin", "mcp-port.txt");
+    if (!existsSync(portFile)) continue;
+    try {
+      const port = parseInt(readFileSync(portFile, "utf-8").trim(), 10);
+      if (port >= 8080 && port <= 8089 && !out.some((c) => c.port === port)) out.push({ year, port });
+    } catch {
+    }
+  }
+  return out;
+}
+async function resolveRevitPortLive() {
+  const info = resolveRevitPortInfo();
+  if (!info.source.startsWith("mcp-port.txt")) return info.port;
+  for (const c of swarmPortFileCandidates()) {
+    if (await tcpOpen(c.port)) return c.port;
+  }
+  return info.port;
+}
+function swarmReadCodeFile(args) {
+  const hasCode = typeof args.code === "string" && args.code.trim() !== "";
+  if (!args.codeFile) {
+    if (!hasCode) throw new Error("pass code or codeFile");
+    return args.code;
+  }
+  if (hasCode) throw new Error("pass either code or codeFile, not both");
+  const f = String(args.codeFile);
+  if (!/^[A-Za-z]:[\\/]/.test(f) || !/\.cs$/i.test(f)) throw new Error(`codeFile must be an absolute path to a .cs file (${f})`);
+  if (!existsSync(f)) throw new Error(`codeFile not found: ${f}`);
+  const raw = readFileSync(f);
+  if (args.expectSha256) {
+    const got = swarmCreateHash("sha256").update(raw).digest("hex");
+    if (got !== String(args.expectSha256).toLowerCase()) throw new Error(`codeFile ${f} sha256 ${got} is not the reviewed ${args.expectSha256} (the file changed after the gate)`);
+  }
+  let text = raw.toString("utf-8");
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  text = text.replace(/\r\n?/g, "\n");
+  if (args.expectMarker && !text.includes(args.expectMarker)) throw new Error(`codeFile ${f} does not contain the marker "${args.expectMarker}" (stale or wrong version)`);
+  return text;
+}
+"""
+
+CODEFILE_EDITS = [
+    ("function readPortFromFile() {\n", CODEFILE_HELPERS + "function readPortFromFile() {\n"),
+    ("  await previousMutex;\n  const port = resolveRevitPort();\n",
+     "  await previousMutex;\n  const port = await resolveRevitPortLive();\n"),
+    ("      code: external_exports.string().describe('C# code to execute.",
+     "      codeFile: external_exports.string().optional().describe(\"Absolute path to a .cs file under the swarm folder. The server reads the file and runs its text as code, so a script on disk is never retyped. Use instead of code.\"),\n"
+     "      expectMarker: external_exports.string().optional().describe(\"With codeFile: text the file must contain (e.g. the script's version line); the call fails if it is missing.\"),\n"
+     "      expectSha256: external_exports.string().optional().describe(\"With codeFile: sha256 of the file bytes, as printed by the revit_cs_check gate; the call fails if the file changed.\"),\n"
+     "      code: external_exports.string().optional().describe('C# code to execute (or pass codeFile instead)."),
+    ("      const params = {\n        code: args.code,\n        parameters: args.parameters || [],",
+     "      let codeText;\n      try {\n        codeText = swarmReadCodeFile(args);\n      } catch (error2) {\n        return rawToolError(\"send_code_to_revit\", `Code execution failed: ${errorMessage(error2)}`);\n      }\n"
+     "      const params = {\n        code: codeText,\n        parameters: args.parameters || [],"),
+    ('          return rawToolResponse("revit_instance", { ...info, pinnedTitle: pinnedRevitTitle });',
+     '          return rawToolResponse("revit_instance", { ...info, pinnedTitle: pinnedRevitTitle, liveFallbackPort: await resolveRevitPortLive(), portFiles: swarmPortFileCandidates() });'),
+]
+
+
+def codefile_text(text):
+    if CODEFILE_MARK in text:
+        return text
+    if MARK not in text:
+        raise ValueError("install the base multi-instance patch first (python tools/patch_revit_mcp.py)")
+    for old, new in CODEFILE_EDITS:
+        if text.count(old) != 1:
+            raise ValueError(f"codefile patch anchor mismatch ({text.count(old)} found): {old[:80]!r}")
+        text = text.replace(old, new)
+    return text
+
+
+def install_codefile(bundle, check=False, restore=False):
+    backup = bundle.with_suffix(".js.pre-swarm-codefile")
+    current = bundle.read_text(encoding="utf-8")
+    if restore:
+        original = backup.read_text(encoding="utf-8")
+        if codefile_text(original) != current:
+            raise ValueError("installed bundle changed since the codefile patch; refusing to overwrite it")
+        patched = original
+    else:
+        patched = codefile_text(current)
+    if current == patched:
+        print("codefile patch already installed:", bundle)
+        return 0
+    if check:
+        print("codefile patch anchors OK:", bundle)
+        return 0
+    if not restore:
+        if backup.exists() and backup.read_text(encoding="utf-8") != current:
+            raise ValueError(f"codefile backup already belongs to a different bundle: {backup}")
+        if not backup.exists():
+            shutil.copy2(bundle, backup)
+    with NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=bundle.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(patched)
+            stream.close()
+            os.replace(temporary, bundle)
+        finally:
+            temporary.unlink(missing_ok=True)
+    print("restored codefile backup:" if restore else "installed codefile patch:", bundle)
+    return 0
+
+
 def main():
+    if "--codefile-only" in sys.argv:
+        try:
+            return install_codefile(BUNDLE, check="--check" in sys.argv, restore="--restore" in sys.argv)
+        except (OSError, ValueError) as error:
+            print(error, file=sys.stderr)
+            return 1
     if "--health-only" in sys.argv:
         try:
             return install_health(BUNDLE, check="--check" in sys.argv, restore="--restore" in sys.argv)

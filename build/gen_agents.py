@@ -529,9 +529,10 @@ Read those; do not look for a scout manifest that was not listed.
      2026-11-17 rules (LESSONS R59-R85: 23-073 Blocks 6&7, 25-076, 26036 CFA, 25-061 WF; details in scripting-lessons):
      - Return tail-first and small (R59): first line `done=<n> skipped=<n> failed=<n>`, then cleanup_params, then a
        capped detail body; the whole return <= 2.3 KB on EVERY path (GO, NO_GO, ROLLED_BACK): the bridge cuts at ~3 KB.
-     - Size budget (R62/R70/R72): the writer sends the whole .cs verbatim; keep a script <= ~450 lines / ~12k tokens
-       (chars/4), state the estimate in your reply, and split larger work into staged tasks. Line 1 is a version
-       marker comment "// <task-id> v<n>" so the writer can prove it sent the file it read.
+     - Size budget (R62/R70/R72, codeFile 2026-11-25): the writer sends the file by path (send_code_to_revit codeFile,
+       bound to the gate's sha256), so length is no longer a transcription risk. Still split by STAGE (delete vs create,
+       one dry run each) and keep one concern per script; over ~1500 lines state why it cannot be staged. Line 1 is a
+       version marker comment "// <task-id> v<n>": the writer passes it as expectMarker.
      - Dry run safety (R77): an R47 commit-then-rollback dry run checks the grp.Start()/grp.RollBack() statuses and
        re-reads the model after RollBack (created ids gone, changed values back), else returns ROLLBACK_FAILED. Scripts
        that edit view/sheet/annotation state (rename, crop, HideElements, viewport SetBoxCenter, detail curves, text)
@@ -824,9 +825,12 @@ Load the `revit-conventions` skill first.
 {harden_writer(LOCKS + "/revit.lock", "the Revit warnings count (get_warnings; the count only)")}
 ## Revit specifics
 - Before you take the lock or call Revit, run `python {SWARM}/tools/revit_cs_check.py "<script>"
-  --reuse-precheck "{MAN}/<task-id>.precheck.json" --run-id <run-id> --task-id <task-id> --emit-code`.
-  Exit 0 gives the reviewed code as a JSON string; send that exact decoded string as the MCP code, for both the dry
-  run and the real run. Confirm the version marker. Exits 1/2/3 block live execution. A changed file or toolchain
+  --reuse-precheck "{MAN}/<task-id>.precheck.json" --run-id <run-id> --task-id <task-id> --emit-file`.
+  Exit 0 prints sha256, codeFile and expectMarker. Call send_code_to_revit with codeFile=<that path>,
+  expectSha256=<that sha256>, expectMarker=<that marker> and NO code field, for both the dry run and the real run
+  (LESSONS R70/R72: the bridge reads the file, nothing is retyped; the guard reads the same file). Confirm the marker
+  is the version the orchestrator named. If the bridge answers that codeFile is unknown (unpatched server), fall back
+  to --emit-code and send the decoded string as code. Exits 1/2/3 block live execution. A changed file or toolchain
   triggers an offline recompile and then a new independent precheck. Ask the orchestrator to send it to script-checker.
 - Run with send_code_to_revit and the script's named transactionMode. Give each dry run, real run and separate
   read-back probe its own request marker. For an export use the request id parameter accepted by the shared template.
@@ -844,9 +848,10 @@ Load the `revit-conventions` skill first.
   values. List cascade deletes by category + type; unnamed cascade ids are NO_GO until the scout names them.
 - Refuse a run whose snapshot is older than the last Revit reopen or crash the orchestrator told you about
   (report "stale snapshot (O30)").
-- Long scripts (2026-11-17, LESSONS R62/R70/R72): Use the checked code from the gate and send it verbatim; never
-  retype or reconstruct it from memory. Its line-1 marker ("// <task-id> v<n>") must match the version the
-  orchestrator named. A script you cannot send verbatim is NOT_RUN "too long to send verbatim"; never trim it.
+- Long scripts (LESSONS R62/R70/R72): send them by codeFile + expectSha256 + expectMarker, never as typed code;
+  never retype, trim or reconstruct a script from memory. A sha256 or marker mismatch from the bridge means the file
+  changed after the gate: stop, NOT_RUN "file changed after precheck". In the --emit-code fallback a script you cannot
+  send verbatim is NOT_RUN "too long to send verbatim".
 - Dry-run safety (R77): a view/sheet/annotation script's dry run makes no change. A commit-then-rollback dry run must
   report the RollBack status and a post-rollback re-read; "ROLLBACK_FAILED" or no re-read = stop, write status
   "failed" with error "ROLLBACK:", and run nothing else (the orchestrator sends a reconcile scout).

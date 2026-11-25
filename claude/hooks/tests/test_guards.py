@@ -265,6 +265,39 @@ if HOME_ALIASES:
 run(BG, ["visual-verifier"], "Bash", {"command": 'python C:/Users/Someone/swarm/tools/visual_crop.py a.pdf 1 0,0,1,1 T3'},
     BLOCK, "visual-verifier: another user's swarm copy")
 
+# ---- send_code_to_revit codeFile (R70/R72, 2026-11-25): the file's text is judged exactly like inline code.
+import shutil  # noqa: E402
+CF = SWARM / "scratch" / "guardtest_codefile"
+CF.mkdir(parents=True, exist_ok=True)
+cf_ok = CF / "T-ok.cs"
+cf_ok.write_text('var n = new FilteredElementCollector(document).GetElementCount(); return "n=" + n;', encoding="utf-8")
+cf_save = CF / "T-save.cs"
+cf_save.write_text("document.Save(); return 1;", encoding="utf-8")
+cf_tx = CF / "T-tx.cs"
+cf_tx.write_text('using (var t = new Transaction(document, "x")) { t.Start(); t.Commit(); } return 1;', encoding="utf-8")
+cf_txt = CF / "T-ok.txt"
+cf_txt.write_text("return 1;", encoding="utf-8")
+outside = Path(tempfile.gettempdir()) / "guardtest_outside.cs"
+outside.write_text("return 1;", encoding="utf-8")
+RG = "revit_readonly_code_guard.py"
+run(WG, ["revit"], SC, {"codeFile": fwd(cf_ok)}, ALLOW, "writer: codeFile under swarm")
+run(WG, ["revit"], SC, {"codeFile": str(cf_ok)}, ALLOW, "writer: codeFile with backslashes")
+run(WG, ["revit"], SC, {"codeFile": fwd(cf_save)}, BLOCK, "writer: codeFile that calls Save")
+run(WG, ["revit"], SC, {"codeFile": fwd(cf_ok), "code": "return 1;"}, BLOCK, "writer: code and codeFile together")
+run(WG, ["revit"], SC, {"codeFile": fwd(cf_txt)}, BLOCK, "writer: codeFile not .cs")
+run(WG, ["revit"], SC, {"codeFile": fwd(outside)}, BLOCK, "writer: codeFile outside swarm")
+run(WG, ["revit"], SC, {"codeFile": "scratch/guardtest_codefile/T-ok.cs"}, BLOCK, "writer: relative codeFile")
+run(WG, ["revit"], SC, {"codeFile": fwd(CF / "missing.cs")}, BLOCK, "writer: missing codeFile")
+cf_del = CF / "T-del.cs"
+cf_del.write_text("document.Delete(id); return 1;", encoding="utf-8")
+run(WG, ["revit-ops"], SC, {"codeFile": fwd(cf_del), "transactionMode": "none"}, BLOCK, "revit-ops: codeFile that Deletes")
+run(RG, [], SC, {"codeFile": fwd(cf_ok), "transactionMode": "none"}, ALLOW, "read-only: codeFile query")
+run(RG, [], SC, {"codeFile": fwd(cf_tx), "transactionMode": "none"}, BLOCK, "read-only: codeFile with a Transaction")
+run("orchestrator_guard.py", [], SC, {"codeFile": fwd(cf_ok), "transactionMode": "none"}, BLOCK,
+    "orchestrator: codeFile is never the sync template")
+shutil.rmtree(CF, ignore_errors=True)
+outside.unlink(missing_ok=True)
+
 failed = [r for r in results if not r[0]]
 for ok, guard, name, code, err in results:
     print(f"{'PASS' if ok else 'FAIL'}  {guard:30} {name}" + ("" if ok else f"  (exit {code}: {err})"))

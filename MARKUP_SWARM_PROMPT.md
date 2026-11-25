@@ -356,12 +356,15 @@ Start by listing inputs/ and asking for the project number, name, and which CAD 
 20. 23-073 / 25-076 / 26036 CFA / 25-061 WF lessons (2026-11-17, LESSONS O32-O38, R59-R85, J13-J15):
     a. Bridge check first (O37): the first revit-scout call returns Document.Title + Revit version; compare with
        project.json before any other Revit work. Wrong document or a hang: check every
-       %APPDATA%/Autodesk/Revit/Addins/<year>/revit_mcp_plugin/mcp-port.txt against the running Revit and rename the
-       stale ones (the plugin takes the highest year first). An index from another document is rebuilt (O34).
+       %APPDATA%/Autodesk/Revit/Addins/<year>/revit_mcp_plugin/mcp-port.txt against the running Revit (revit_instance
+       status lists them; since 2026-11-25 the patched server skips a file whose port does not answer, so a stale file
+       only wins when two Revits are live: use revit_instance select). An index from another document is rebuilt (O34).
     b. Sync after every verified batch (O35): SYNC B right after each verifier PASS batch, not at milestones.
     c. Never chain a state-changing step after a command that can fail with ';' (O36): use && or separate calls.
-    d. One long script per writer (R62/R70/R72): each script over ~300 lines gets its own revit-writer; over ~450 lines
-       it goes back to the scripter to split. After a permission-mode change (auto mode on/off), spawn a fresh writer;
+    d. One long script per writer (R62/R70/R72): each script over ~300 lines gets its own revit-writer. Writers send
+       scripts by path (revit_cs_check --emit-file -> send_code_to_revit codeFile + expectSha256 + expectMarker), so
+       length is no longer a reason to split; over ~1500 lines, or deletes mixed with new geometry, goes back to the
+       scripter to stage. After a plugin update re-run tools/patch_revit_mcp.py, then --codefile-only. After a permission-mode change (auto mode on/off), spawn a fresh writer;
        never resume one launched under the old mode (O38).
     e. A dry run that reports ROLLBACK_FAILED, or a commit-then-rollback dry run without a post-rollback re-read, stops
        the batch: send a reconcile scout before anything else (R77).

@@ -169,8 +169,10 @@ Schedules
 ## 23-073 Blocks 6&7, 25-076, 26036 CFA, 25-061 WF lessons (2026-11-09..16; swarm/LESSONS.md R59-R85, O34, O37)
 Returns, size, dry runs
 - The bridge truncates returns at ~3 KB: `done=/skipped=/failed=` and cleanup_params first, capped detail after; <= 2.3 KB
-  on every path (R59). Writers retype nothing: they send the file verbatim, so keep scripts <= ~450 lines / ~12k
-  tokens with a line-1 marker "// <task-id> v<n>"; split above that (R70/R72). One long script per writer (R62).
+  on every path (R59). Writers retype nothing: since 2026-11-25 they send the FILE (send_code_to_revit codeFile +
+  expectSha256 from the gate + expectMarker = the line-1 "// <task-id> v<n>"), so length is not a transcription risk
+  (R70/R72). Still stage by concern (delete vs create, one dry run each); over ~1500 lines needs a reason. One long
+  script per writer (R62).
 - SAFETY (R77): a commit-then-rollback dry run PERSISTED view edits (rename, crop, HideElements, viewport
   SetBoxCenter, detail curves; CFA T16a v3); pipes rolled back fine. Check grp.Start()/grp.RollBack() statuses, re-read
   the model after RollBack, return ROLLBACK_FAILED on leftovers. View/sheet/annotation dry runs are read-only.
@@ -211,7 +213,8 @@ Scouting and bridge
 - A scout "not found" lists its exact search; schedules: Header, Body and Footer sections; text: every TextNote on every
   sheet and every view on the named sheets (R83). An index from another document is not evidence (O34).
 - The bridge picked a stale mcp-port.txt (2026 file, 8081) over the live Revit 2024 (8080): confirm Document.Title and
-  version on the first call (O37).
+  version on the first call (O37). Since 2026-11-25 the patched server skips a port file whose port does not answer
+  (revit_instance status shows portFiles / liveFallbackPort); with two live Revits use revit_instance select.
 
 ## Village 24-071 VSV lessons (2026-11-19; swarm/LESSONS.md R76/R77/R82/R86-R92, O39; run 20261119-VSV)
 Dry runs

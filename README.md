@@ -32,6 +32,8 @@ python build\gen_all.py
 ```
 
 On this machine, install the Revit bridge health patch with `python tools/patch_revit_mcp.py --health-only`.
+After the base patch, install the codeFile / live-port patch with `python tools/patch_revit_mcp.py --codefile-only`
+(LESSONS R70/R72/O37; re-run both after every revit-mcp plugin update, then reconnect /mcp).
 Run it again after a Revit MCP update. Use `--health-only --check` to check compatibility and
 `--health-only --restore` to restore the saved bundle. Reconnect only the Revit MCP server or start a new
 Claude Code session to load the change. The added `get_project_info(health=true)` request checks the active

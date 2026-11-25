@@ -59,11 +59,11 @@ Read before writing or fixing a script. New lessons go here, plus a one-line poi
   "_.-PDFATTACH <path with \\\\>\r<page>\r<x>,<y>\r<scale>\r<rot>" with NO trailing \r (the helper adds one; an
   extra one repeats the command). Check the live slot against the literal values first and ABORT on a mismatch.
 - Delete (P11): CLEAN and rollback use (vla-Delete obj) and verify vlax-erased-p; entdel returned deleted=3 while
-  all 3 stayed live (C22-R1-T2). Count only verified deletions.
+  all 3 stayed live (C22-R1-T2). Count only verified deletions: (swl:delete-verified xs) -> (deleted failed) (A53).
 - Text that does not plot (P12): TEXT/MTEXT made with vla-AddText/AddMText (S1/S2) and paper-space clouds/tag made
   by entmake/CopyObjects on P012 existed (entget fine, layer on, draw order on top) but never plotted; cause
   unknown. Make new text as vla-Copy of a plotting entity of the same kind in the same space, then set string and
-  position. Every task that adds text/markup gets a test plot read back (PDF text/linework search or a crop);
+  position: (swl:copy-text src str pt) -> new handle or "ABORT ..." (A53). Every task that adds text/markup gets a test plot read back (PDF text/linework search or a crop);
   PASS_API_ONLY never proves it prints.
 - Delta layer (P13): N_P_REV2/N_P_REV3 differ per DWG. Never ABORT on a missing delta layer: create N_P_REV3 (copy
   of N_P_REV2 if present, else colour 1, Continuous, plottable, thawed), report layer_created, record it for CLEAN.
@@ -72,7 +72,8 @@ Read before writing or fixing a script. New lessons go here, plus a one-line poi
 - Clash scans (P15) skip non-plot layers (Defpoints, plot flag off); such frames are margins, not obstacles.
 - Check plots (P16): set CTAB, force paper space ((vla-put-MSpace doc :vlax-false), CVPORT 1 - P101-W plotted as
   bare model space with a floating viewport active), vla-Regen acAllViewports, make the output folder, _plot1,
-  then restore CTAB and BACKGROUNDPLOT (plotfns leaves it 0). A bridge timeout on _plot1 is normal: compare the PDF
+  then restore CTAB and BACKGROUNDPLOT (plotfns leaves it 0). (swl:plot-prep layout outdir) does all but the plot and
+  returns the state for (swl:plot-restore st) (A53). A bridge timeout on _plot1 is normal: compare the PDF
   size with a previous good plot instead of replotting blindly. Try -PUBLISH first only where it is known to work.
 - CHECK finds its own notes by the handles in created.txt (joining wrapped TEXT lines), never by a text search (P17).
 - Embedded Excel (P10): an OLE frame shows ONE sheet of a multi-sheet workbook. With two candidate frames, test-plot
