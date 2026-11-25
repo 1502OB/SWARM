@@ -305,3 +305,105 @@ Exports, warnings, API checks
 - get_warnings returning exactly 500 is its cap: count with document.GetWarnings().Count (R52).
 - revit_api_check.py does not index enum members (BuiltInParameter.*, BuiltInCategory.* report NOT FOUND): grep
   revit-api references/db-b-c.md for " NAME = "; the revit_cs_check compile decides (R58).
+
+## Aritzia 26030 ATZ lessons (2026-11-25 roll-in; swarm/LESSONS.md R101-R124, O53-O56; run 20261120-ATZ)
+Script shape
+- One top-level try around EVERYTHING, pre-checks included; its catch returns "FAILED @<stage>: <type>: <message> |
+  <first frame>". R2-T1 and R13-T1 v1 threw before their try and returned a bare 'Object reference' / 'target of an
+  invocation'; each cost a debug cycle (R116; revit_cs_check L16 is an error on writing scripts).
+- A change task whose dry run would edit 0 is NO_OP = failed; the dry run states would_edit=<n> (R27 v2 targeted the
+  wrong schedule and logged success with done=0) (R122).
+- Never commit a DELETE stage before its REBUILD stage has a dry-run GO; pair them in one TransactionGroup or dry-run
+  the rebuild against the deleted state in a rolled-back group (R20: the 2x1-1/2 reducer could not be recreated, the
+  model was recovered by discard and reopen) (R101).
+- After document.Delete or a RollBack, read nothing from a pre-captured wrapper (Pipe, Line, Connector): capture ids,
+  diameters and XYZ first. A rollback re-read takes each id in its own try/catch (unreadable created id = gone);
+  ROLLBACK_FAILED only on a readable mismatch (R25 v2/v3 reported ROLLBACK_FAILED on a clean model) (R119).
+Pipes and fittings
+- Setting size/radius on a fitting connected in a network can raise "The family is connected in a network and can no
+  longer keep the connectivity. Disconnect the family from the network?" (OK/Cancel), a modal that FailuresProcessing
+  never sees (R17 v1 timed out until Jeremy answered). Delete and recreate instead, or register
+  UIApplication.DialogBoxShowing (OverrideResult Cancel, log DialogId, dry run NO_GO on any dialog). With that handler
+  in place, resizing a connected wye branch via 'Nominal Radius 2' inside a delete+rebuild group worked (R118/R109).
+- Plan connections from the scout's connector list: size, BasisZ, joined to pipe / fitting / free, neighbouring pipes
+  < 0.3 ft (R17: 3488613 was a 0.05 ft stub; R15-T2: DW-1's connector points (0,0,-1); R20-T2: vent connector 2 in > the
+  1-1/2 in route, which needs the reducer kept, CPC 703.2) (R123/R103).
+- A geometry probe cannot say GO for a fitting: create it in a rolled-back SubTransaction and report Revit's answer
+  (R13-T2 / R19 probes said GO, NewTeeFitting then refused "angle between them is too small or too large") (R124/R106).
+- 45-deg wye on a sloped horizontal main (R107, R13-T2 A.v4 from the ChatGPT second opinion, manifests/ATZ-WYE.chatgpt.md):
+  place the wye FamilyInstance, set 'Nominal Radius n' from an explicit sizeMap ("1,2|3" = run|branch for
+  120D_Wye 45 Deg Tee Reducing), 3D-align the run to the main's flow vector and roll about it for arm grade,
+  BreakCurve after placement, trim to port origins, ConnectTo, check |Nport+Nend|.
+- Document.LoadFamily(path) returned false with no exception for 3 complete library .rfa files on L:. Copy to a local
+  temp folder and LoadFamily(localPath, out Family) in the script's own Transaction (mode none) with a logging dialog
+  handler: all 3 (Revit 2021 families) loaded first try (R108/R110).
+- Library accessories may size by TYPE params (filter: 'Connection RADIUS' drives the connector), and some regenerate
+  only in their rated range (dual check 1/4-3/8 fails at 1/2): probe with a +0.01 driver search before placing (R112).
+Views, links, tags, sheets
+- RevitLinkGraphicsSettings ByHostView makes the link follow the host's phase filter (plans on 'Show All' then show the
+  arch demolition): use Custom + SetPhase/SetPhaseFilter on the link ids, no LinkedViewId (R111).
+- Tag matching: TagText reads "3.000000 FU"; match by regex 3(\.0+)?\s*FU on normalised text; test the tag's text box
+  (not its head point) against the target rect; in iso views far tags project onto the same sheet spot, so they are
+  obstacles; apply the resolved subset and list unresolved items (R12-T1/T2) (R121).
+- Deleting a pipe piece deletes its size tags: scripts that split pipes record and re-create them (ACC-T2 v5/v6) (O55).
+- Riser/isometric tag auto-layout did not converge in 5 versions (text box shifts 0.5-1.8 in with leader side): do
+  not script it; at most offer duplicate-tag deletion (R113).
+- View3D.Duplicate(WithDetailing) then a smaller section box leaves the copied tags/notes of hosts outside the box
+  floating: delete that orphan annotation in the same task (R114).
+- Tag/size stages skip and report views with crop off or an unlocked 3D view (O53).
+- Schedule/sticky text: find each row's label column by scanning that row (R9-T1: row 13's label 'B.' was in col 0,
+  not row 12's column) (R120); the OLD fragment can change in an earlier task of the run (R5 -> R26): re-derive it and
+  give the script a read-only "find" mode (R104); scout which schedule prints the string (R27 v2 searched the symbol
+  legend; abbreviations were in 'P5.00 ABBREVIATIONS') (R105).
+- Title block date: scout which parameter the label reads (ATZ: sheet shared 'Project Start Date', GUID 3d21cc7a-...,
+  not SHEET_ISSUE_DATE) (R102). 'Drawn By' may live in SHEET_DRAWN_BY, shared 'MEP_Drawn By' and a second 'Drawn By':
+  set all by Definition.Name and check the printed sheet (R115).
+- Packing viewports: measure GetBoxOutline + label first and try all orders; find the title-strip edge from geometry
+  (it fell back to tbMinX + 3.6 ft) (O56).
+
+## Village move VSM lessons (2026-11-25 roll-in; swarm/LESSONS.md R125-R134; run 20261123-VSM, PLMB-24220-R25 -> VILLAGE)
+- Every cross-document CopyElements that brings a keynote-bearing element (schedule, keynote tag family, view template,
+  detail item with a keynote param) raised a modal 'Duplicate Types' (Keynoting Settings : Standard) when the two
+  models point at different keynote files: 4 timeouts, 4 Jeremy clicks. Compare keynote file + numbering first; align
+  them only with Jeremy's OK (a model setting); even then expect the dialog: mark the script "dialog likely" (R125).
+- A script that can hit a modal writes STARTED/DONE progress and its final return to
+  manifests/<task>.<mode>.<requestId>.result.txt before returning; the writer rewrites write.json from it after the
+  dialog clears (result_source "file") (R126).
+- Never hard-code a count from the plan: R25 has 16 Village levels (an extra 'COAST - NEW BASEMENT LEVEL'); copy all
+  that match and require the N the sheets use; scouts quote the query behind every count (R127).
+- Sheet parameters: VILLAGE had 'Sheet Sort / Sheet Group / Sub-Discipline' while R25 had both 'SHEET Category' (filled)
+  and 'Sheet Category' (empty); a case-insensitive match took the empty ones. Match exact-case; when two differ only
+  by case, choose by non-empty count and say which (R128; extends R71).
+- View graphics not driven by the template (RevitLinkGraphicsSettings per view, GetCategoryHidden /
+  GetCategoryOverrides, filters, detail level, phase filter, view range) and project standards (object styles, line
+  patterns, text and filled-region types) need their own task BEFORE sheets: SHT-T1 failed visual (grids printed,
+  faint arch, 4x border bars) and VG-T1 changed 2,530 per-view settings afterwards (R129).
+- The line weight table has no API: Jeremy's Transfer Project Standards (Object Styles + Line Weights) is the first
+  manual step; do not script model-category object styles one by one (R130).
+- Category.SetLinePatternId accepts only a LinePatternElement id or LinePatternElement.GetSolidPatternId():
+  InvalidElementId threw ArgumentException (VG-T1 B failed=3) (R131).
+- Create or map every filled-region, detail-group, detail-item and text type the copied annotation uses in LOAD; a
+  group type clash only warned and made 'Setback (Don't Delete) 2'; area/room tags need the scheme and rooms: list them
+  as hand items in the plan (R132).
+- A view range that uses a level the target lacks (PARKING - LEVEL B1) is reported in the dry run as a hand item (R133).
+- The dry run's FailuresProcessing must record warnings too; GO = failureTotal 0 for errors AND warnings (R134).
+
+Cross-document sheet move checklist (retro 20261123-VSM; what must be copied besides sheets and views):
+Plan these as LOAD/STANDARDS tasks BEFORE the sheet build; the ones marked [hand] have no API.
+
+1. Project information (all values the title blocks print) and revision list/sequence. [R91 style copy]
+2. Levels, scope boxes, grids (copy/monitor), through the link transform T (read both link positions live).
+3. Title block families and types; viewport types and their title families ('RDC View Title').
+4. View templates (non-controlled lists, incl. VIEW_SCALE entries - R90), view filters, phase filters.
+5. Line patterns, line styles and object styles for annotation AND model categories; line weight table [hand: Transfer Project Standards, Line Weights + Object Styles, run first].
+6. Text types, dimension types, filled-region types, detail-item/tag families and types, detail group types.
+7. Keynote settings (file path, numbering) and the keynote schedule; expect Duplicate Types dialogs (P1).
+8. Sheet, view and viewport parameters bound to Sheets/Views: names exact case, storage type, shared-parameter file and GUID (P4).
+9. Per-view graphics NOT driven by the template: link display (RevitLinkGraphicsSettings), category visibility/overrides, view range with its levels, detail level, discipline, phase filter, annotation crop (P5, P9).
+10. Schedule appearance: header text types, cell borders, show-headers flags, column widths.
+11. Sheet browser organization (e.g. 'RDC Standard' folders) [hand]; sheet sort order.
+12. Annotation that does not copy: tags that need source elements (pipe tags, spot elevations, dimensions), detail-item tags, area/room tags: list counts and names as a hand list at plan time.
+13. Worksets and their view visibility (hidden-by-default worksets, R33); active workset for new elements (R22).
+14. Link: type, position, workset; arch background views the plan views follow.
+15. Cleanup of the target's template content last (sheets/views not on the new sheets), keeping view templates, browser views, and levels the target needs; the active view ({3D}) cannot be deleted.
+16. Verify order: verifier (counts, params, alignment), export, visual-verifier on every sheet (Q25), then the manual list for Jeremy; sync after each verified batch (O35).

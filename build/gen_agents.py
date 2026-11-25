@@ -388,6 +388,16 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
   per element, not network numbers. Linked views: read LinkedViewId in link.GetLinkDocument(). Warnings over 500:
   count with document.GetWarnings().Count. Pipe sizes for calcs come from you (the live model), never from an older
   set (O45). A re-scout after a pause reports what changed since the earlier scout (O43: Jeremy had placed the GCO).
+- 2026-11-25 (ATZ + VSM; LESSONS R102/R105/R115/R123/R125/R127/R128/R132/R133): for every fixture or fitting a task
+  connects to, list each connector (size, BasisZ direction, joined to pipe / fitting / free) and every neighbouring
+  pipe shorter than 0.3 ft (R123: a 0.05 ft stub and a down-pointing DW-1 connector cost six dry runs). Name the
+  parameter the title block's date / drawn-by labels read (R102/R115) and the schedule that actually PRINTS a string
+  (R105). Every count quotes the exact query and the live list behind it, never a digest (R127: 16 Village levels; a
+  sheet-name search missed the B-/L-/S- set). Cross-document moves: list every project/shared parameter bound to
+  Sheets, Views and Viewports in source and target (exact-case name, storage type, GUID, group, filled/empty counts;
+  R128), the Keynoting Settings of both (file, numbering; R125), every annotation type the copied views use
+  (filled-region, detail group, detail item, text; R132) and each view range's levels with whether the target has
+  them (R133).
 
 {harden_scout("revit")}
 {COMMON}
@@ -424,6 +434,9 @@ Load the `acad-conventions` skill first (Skill tool).
   paper-space pseudo viewport is 69 = 1) with their model-space window, and for every model-space target you report
   an on_sheet flag (inside some floating viewport). floating_viewports=0 means model-space text there is off-sheet.
 - Keep scans to one DWG per call batch and <= 40 entities per execute_lisp (AutoCAD crashed on a long 6-xref scan, A30).
+- Zones (2026-11-25 (ATZ pass), A57, 2026-0022 EBR): when asked whether a zone is empty, report long axis-aligned LINEs
+  that run past it (sheet division lines, e.g. AO E1 '104 MED 2': y 21.28/21.75 in the right strip, x 16.974 full
+  height) separately as zone splits with coordinates, not as content; the orchestrator writes zone bounds from them.
 
 {harden_scout("acad")}
 {COMMON}
@@ -635,6 +648,65 @@ Read those; do not look for a scout manifest that was not listed.
        (appends -1), so the script deletes or reports an existing file first and returns name + size.
      - Stale scouts (O43): a scout older than the last pause (overnight, a question round, Jeremy's hand fixes) is
        stale for every element you touch: ask for a re-scout instead of scripting from it.
+     2026-11-25 (ATZ + VSM) rules (LESSONS R101-R115, R116-R134, O53/O55/O56; 26030 Aritzia run 20261120-ATZ and the
+     24-071 Village move 20261123-VSM; details in scripting-lessons "Aritzia 26030 ATZ" / "Village move VSM"):
+     - Outer catch (R116, lint L16 = error on writing scripts): every statement, pre-checks and lookups included, sits
+       inside ONE top-level try whose catch (Exception ex) returns "FAILED @<stage>: <type>: <message>" from a stage
+       variable you keep updating; no document.<Method>() or collector before it (lambdas may be declared before it).
+     - No-op is a failure (R122): when expected.json asks for a change, the dry run reports would_edit=<n>; a run that
+       would edit 0 returns NO_OP with failed=1, never success (ATZ-R27 v2 'succeeded' with done=0 on the wrong schedule).
+     - Delete + rebuild (R101): never commit a delete stage before its rebuild has a dry-run GO: both in one group, or
+       dry-run the rebuild against the deleted state inside a rolled-back group first (ATZ-R20 needed discard + reopen).
+     - After document.Delete or a RollBack read no property of a pre-captured wrapper (R119): capture plain values
+       (ids, diameters, XYZ) first; a rollback re-read takes each id in its own try/catch, an unreadable created id is
+       gone, ROLLBACK_FAILED only on a readable mismatch.
+     - Connected fittings (R118/R109): setting a size/radius on a fitting connected in a network can raise the modal
+       "Disconnect the family from the network?" that FailuresProcessing never sees (ATZ-R17 v1 hung). Prefer delete +
+       recreate; if you resize, register UIApplication.DialogBoxShowing (OverrideResult Cancel, log DialogId; any dialog
+       in the dry run = NO_GO) and unregister it in finally.
+     - Topology (R123/R103): plan only from the scout's connector list (size, BasisZ, joined to pipe / fitting / free,
+       stubs < 0.3 ft); a smaller vent route keeps or recreates the reducer; a fixture connector pointing down or
+       skewed, or a topology the list does not match, is a manual step, not a script.
+     - Fittings (R124/R106/R107): a geometry probe never returns GO for a fitting: create it inside a rolled-back
+       SubTransaction to learn whether Revit accepts it. A 45-deg wye on a sloped main: NewTeeFitting is refused
+       ("angle too small or too large"); the working method places the wye FamilyInstance with its 'Nominal Radius n'
+       set from an explicit sizeMap, aligned to the main's flow vector and rolled for arm grade, BreakCurve after
+       placement, trims to port origins, ConnectTo, checks |Nport+Nend| ({SCRIPTS}/ATZ-R13-T2.A.v4.cs). After one
+       NO_GO on a tie it goes on the hand-fix list.
+     - Families (R110/R112): Document.LoadFamily(<path on L:>) can return false with no exception: copy the .rfa to a
+       local temp folder and LoadFamily(localPath, out Family) in the script's own Transaction (mode none) with a
+       logging dialog handler. Library accessories may size by TYPE params ('Connection RADIUS') and regenerate only in
+       their rated range: probe with a +0.01 driver search before placing.
+     - Links (R111): ByHostView makes a link follow the host phase filter (plans on 'Show All' showed the arch
+       demolition); use Custom + SetPhase/SetPhaseFilter on the link ids with no LinkedViewId.
+     - Text edits (R104/R105/R120): the OLD fragment may have been changed by an earlier task this run: re-derive it
+       from those tasks' scripts and give text scripts a read-only "find" mode; edit the schedule that PRINTS the
+       string (from the scout); find each row's label column by scanning that row, never reuse another row's index.
+     - Tags (R121/O55/R113/R114): match TagText by numeric regex on normalised text (it reads "3.000000 FU"); test the
+       tag text box, not the head point; apply the resolved subset and list unresolved items (the dry run states both
+       counts). Deleting a pipe piece deletes its tags: record and re-create them. Never script riser/isometric tag
+       layout (5 versions did not converge): hand it to the drafter. A View3D duplicated WithDetailing and cropped
+       smaller keeps orphan tags/notes: delete them in the same task.
+     - Sheets (R102/R115/O56): use the parameter the title block's date label reads (ATZ: shared 'Project Start Date',
+       not SHEET_ISSUE_DATE); 'Drawn By' can live in SHEET_DRAWN_BY, 'MEP_Drawn By' and a second 'Drawn By': set all by
+       Definition.Name. Packing viewports: measure GetBoxOutline + label first and try every order.
+     - Views (O53): a tag/size stage skips and reports views with crop off or an unlocked 3D view instead of failing.
+     - Cross-document moves (R125-R134, VSM; checklist in scripting-lessons "Village move VSM"):
+       * Keynoting Settings (R125): compare keynote file + numbering of source and target before the first
+         CopyElements; if they differ the orchestrator gets Jeremy to align them first, and the script header says
+         "dialog likely". Any script that can raise a modal writes STARTED/DONE lines and its final return to
+         {MAN}/<task>.<mode>.<requestId>.result.txt before returning (R126).
+       * Counts come from a live list of the source ("copy all that match, require the N the sheets use"), never a
+         hard-coded N (R127: 16 Village levels, not 15).
+       * Parameters (R128): match names exact-case; when two source parameters differ only by case, take the one with
+         non-empty values and say which.
+       * Types first (R132): every filled-region, detail-group, detail-item and text type the copied annotation uses
+         is created or mapped in the LOAD stage; a name-only clash is mapped, not skipped.
+       * Category.SetLinePatternId takes only a LinePatternElement id or LinePatternElement.GetSolidPatternId(): a '-'
+         source is skipped, solid maps to GetSolidPatternId(), missing named patterns are created from the source (R131).
+       * A view-range level the target lacks is a hand item in the dry run, never a guess (R133).
+       * The dry run's FailuresProcessing records WARNINGS as well as errors; GO needs both at 0 (R134: a duplicated
+         group type 'Setback (Don't Delete) 2' surfaced only after commit).
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
    - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
@@ -696,6 +768,18 @@ Read those; do not look for a scout manifest that was not listed.
      - Geometry contradicts a note (10 meters drawn vs "20 GAS METERS IN 2 ROWS"): write no script; reply with the
        counts and options (A49).
      - task_id comes from task.json and matches ^[A-Z][A-Z0-9]{{1,5}}-[A-Z0-9]+-T[0-9]+[a-z0-9]*$; never invent one (A40).
+     2026-11-25 (ATZ pass; EBR AutoCAD rules, LESSONS A54-A57, 2026-0022; details in acad-conventions scripting-lessons):
+     - Page setup (A54/A55): PlotConfiguration.GetPaperSize returns the RAW media size and ignores PlotRotation: decide
+       the rotation once from the title block (landscape title block on portrait media, e.g. DWG To PDF ARCH E1 30 x 42
+       -> PlotRotation 1) and check the EFFECTIVE size (swap sides for 1/3); never loop rotations until w > h. AO E1 on
+       DWG To PDF: ARCH_full_bleed_E1_(30.00_x_42.00_Inches), origin 0,0, rotation 1, grayscale.ctb (the standard
+       media's margins clipped the title-block column). Page setup lives in its own -PAGE / -PAGECHECK / -PAGECLEAN
+       commands so a plot-setting failure never rolls back sheet content.
+     - Copied text (A56): a vla-Copy of a plotting source inherits its ROTATION (EBR tags copied from a vertical margin
+       note all printed at 90 deg and CHECK passed): set Rotation 0 on the copy, prefer a horizontal source, and CHECK
+       rotation. A cond clause whose test is (and ...) with no body returns T: setq the value inside the test, return it.
+     - Zones (A57): long axis-aligned LINEs that run past a zone (sheet division lines) are BOUNDARIES that split it: a
+       clash for placement, not content that makes the zone "not empty". Take zone bounds from the scout's split lines.
      Before you hand an .lsp back, run these yourself and report each result (the guard allows them since 2026-11-09;
      the orchestrator does not run them for you):
        `python {SWARM}/tools/lsp_lint.py <file>` -> 0 errors (a hook also checks every .lsp you write); treat W5/W6/W7
@@ -876,6 +960,12 @@ Load the `revit-conventions` skill first.
 - Own-Transaction scripts (R99) roll back the named Transaction and still require the post-dry-run probe.
   A fitting's own OST_PipeFittingCenterLine is an expected cascade (R75). A warnings count of exactly 500
   is the get_warnings cap; use an uncapped Document.GetWarnings().Count probe (R52).
+- 2026-11-25 (ATZ + VSM; LESSONS R122/R126/R118/O54): a dry run reporting would_edit=0 for a task whose expected.json
+  asks for a change is NO_GO "NO_OP", never followed by a run (ATZ-R27 v2 wrote success with done=0). A script whose
+  header says "dialog likely" (cross-document copies, connected-fitting resizes): tell the orchestrator before the call
+  so Jeremy can watch; after a timeout, once the dialog is cleared, read {MAN}/<task>.<mode>.<requestId>.result.txt and
+  rewrite write.json from it with result_source "file" (VSM-LOAD v6 stayed "inferred"). A missing or stale precheck
+  (script or expected.json changed) is NOT_RUN "precheck stale": the orchestrator re-runs script-checker, never you.
 - {REVIT_SERIAL}
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", REVIT_SAVE_RULE)}
@@ -1073,6 +1163,11 @@ anything in AutoCAD.
   Sticky (text) schedules: read the HEADER section cells (TableSectionData, SectionType.Header); whether a cell prints
   and whether a header row clips are visual items (null "visual"). Resized pipes: check the generic fittings' 'Nominal
   Radius' as well as the pipes, and compare connector sets unordered. Cleanouts match "CO" or "CLEANOUT" in any case.
+- 2026-11-25 (ATZ + EBR; LESSONS A56/R115/O55/R122/R114): new AutoCAD text: check Rotation (reads horizontally) as
+  well as string and position (EBR tags copied from a vertical note printed at 90 deg and passed). 'Drawn By' and
+  dates: check the parameter the title block prints (all three Drawn By params, R115). Split or rebuilt pipes: their
+  size tags still exist (count before/after, O55). Duplicated 3D views: no orphan tags/notes outside the section box
+  (R114). A change task that shows done=0 is a FAIL, not a pass because nothing broke (R122).
 - Pipe system types (LESSONS R60/R73): after any retype, check the system type of the NEIGHBOURING connected pipes
   and the main as well as the retyped ones (25-076: one SetSystemType turned the building drain into VENT, tags read
   '4" V (0 FU)'). A per-pipe type that reverted is a FAIL.

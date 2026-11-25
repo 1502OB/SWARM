@@ -27,7 +27,7 @@
 6. (2026-11-09) acad-ops may close a drawing (Jeremy D2) only with the exact ACAD_CLOSE_RE form: Saved = :vlax-true,
    not the active drawing, (vla-Close d :vlax-false); the orchestrator sends it only on an explicit close step.
    `writer_guard.py scripter|script-debugger` (Jeremy D1) on Write|Edit: Edit only swarm/scripts/*.lsp and the
-   agent's own manifests (<task-id>.expected.json; debugger also .debug.json and .chatgpt.json); Write only into swarm/scripts/ and
+   agent's own manifests (<task-id>.expected.json; debugger also .debug.json, .debug.c<n>.json and .chatgpt.json); Write only into swarm/scripts/ and
    those manifests. Paths come from hooks/paths.py (SWARM_HOME, else ~/swarm).
 Exit code 2 blocks the call and feeds stderr back to the agent.
 """
@@ -200,6 +200,9 @@ OWN_MANIFESTS = {
     # 2026-11-11: the offline Revit script gate writes its verdict only; it never touches a script.
     "script-checker": ("precheck",),
 }
+# 2026-11-25 (LESSONS R117, retro 20261120-ATZ P8): debug cycles after the first write <task>.debug.c<n>.json so
+# cycle 1 is never overwritten and the R100 ladder can be counted from the files.
+OWN_MANIFEST_PATTERNS = {"script-debugger": (r"debug\.c[1-9][0-9]?",)}
 READ_ONLY_SCRIPT_AGENTS = ("script-checker",)
 TASK_FILE = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 
@@ -210,7 +213,7 @@ def script_file_problem(agent, tool, path):
         return f"{tool} without a file_path"
     target = norm(path)
     root = norm(SWARM)
-    kinds = "|".join(re.escape(k) for k in OWN_MANIFESTS[agent])
+    kinds = "|".join([re.escape(k) for k in OWN_MANIFESTS[agent]] + list(OWN_MANIFEST_PATTERNS.get(agent, ())))
     manifest = re.compile(rf"^{re.escape(root)}/(?:[^/]+/)?manifests/{TASK_FILE}\.(?:{kinds})\.json$")
     if manifest.match(target):
         return None

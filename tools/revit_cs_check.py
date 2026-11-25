@@ -240,6 +240,46 @@ IO_WARN_RE = re.compile(r"\b(File\.(Delete|Move|Replace)|Directory\.(Delete|Move
 MODE_RE = re.compile(r'(?:transactionMode|\bmode)\W{0,3}"?(auto|none)"?', re.I)  # 23-073 headers also say mode "auto"
 
 
+# L16 (2026-11-25, LESSONS R116 / retro 20261120-ATZ P3): ATZ-R2-T1 and ATZ-R13-T1 v1 threw before their try and
+# returned a bare "Object reference" / "target of an invocation" with no stage. The whole body, pre-checks
+# included, must sit inside one top-level try whose catch (Exception) returns FAILED @<stage>.
+PRE_TRY_API_RE = re.compile(r"\b(document|doc|uidoc|uiapp|app)\s*\.\s*[A-Za-z_]\w*\s*(<[^;()]*>)?\s*\(|\bnew\s+(FilteredElementCollector|ElementId)\s*\(")
+
+def outer_catch(b):
+    """Return (pre_api_match_or_None, has_try, has_catch_return) for blanked code b."""
+    depth, first_try, catches, top = 0, None, [], []
+    i, n = 0, len(b)
+    while i < n:
+        c = b[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        elif depth == 0 and (i == 0 or not (b[i - 1].isalnum() or b[i - 1] == "_")):
+            if first_try is None and b.startswith("try", i) and not (b[i + 3:i + 4].isalnum() or b[i + 3:i + 4] == "_"):
+                first_try = i
+            m = re.match(r"catch\s*\(\s*(System\s*\.\s*)?Exception\b[^)]*\)\s*\{", b[i:])
+            if m:
+                j = k = i + m.end(); d = 1
+                while k < n and d:
+                    d += {"{": 1, "}": -1}.get(b[k], 0); k += 1
+                catches.append(b[j:k]); i = k; continue
+        if depth == 0 and first_try is None:
+            top.append((i, c))
+        i += 1
+    pre_hit = None
+    if top:
+        text = "".join(ch for _, ch in top); offs = [p for p, _ in top]
+        pos = 0
+        for stmt in text.split(";"):
+            if "=>" not in stmt:
+                m = PRE_TRY_API_RE.search(stmt)
+                if m:
+                    pre_hit = (offs[pos + m.start()], m.group(0)); break
+            pos += len(stmt) + 1
+    return pre_hit, first_try is not None, any(re.search(r"\breturn\b", x) for x in catches)
+
+
 def line_of(code, pos):
     return code.count("\n", 0, pos) + 1
 
@@ -314,6 +354,15 @@ def lint(path: str, code: str):
             "Take(" not in b and "Length >" not in b and "Count >" not in b:
         add(warns, "L15-return-size", None, "the return is built in a loop with no cap: keep it under ~3 KB "
             "(the bridge truncates; put long lists in counts or a file)")
+    pre_hit, has_try, catch_ret = outer_catch(b)
+    l16 = errs if writes else warns
+    if not has_try or not catch_ret:
+        add(l16, "L16-outer-catch", None, "no top-level try { ... } catch (Exception ex) { return \"FAILED @<stage>: \" + "
+            "ex.GetType().Name + \": \" + ex.Message; }: a throw returns a bare 'target of an invocation' with no stage "
+            "(R116, ATZ-R2-T1/R13-T1)")
+    elif pre_hit:
+        add(l16, "L16-outer-catch", pre_hit[0], f"`{pre_hit[1].strip()}` runs before the first top-level try: move every "
+            "Revit call (pre-checks included) inside the try so a throw reports its stage (R116)")
     return mode, errs, warns
 
 
@@ -384,13 +433,20 @@ def report(results, quiet=False):
 
 
 SELFTEST_OK = '''// selftest: transactionMode "auto". parameters: ["dryrun"]
-bool dry = parameters != null && parameters.Length > 0 && Convert.ToString(parameters[0]) == "dryrun";
-if (document.Title == null) return "NO_GO";
-var walls = new FilteredElementCollector(document).OfClass(typeof(Wall)).GetElementCount();
-if (dry) return "DRYRUN walls=" + walls + "\\ndone=0 skipped=0 failed=0";
-var p = document.ProjectInformation.LookupParameter("Project Name");
-if (p != null) p.Set("x");
-return "walls=" + walls + "\\ndone=1 skipped=0 failed=0";
+string step = "start";
+try
+{
+    bool dry = parameters != null && parameters.Length > 0 && Convert.ToString(parameters[0]) == "dryrun";
+    if (document.Title == null) return "NO_GO";
+    step = "count";
+    var walls = new FilteredElementCollector(document).OfClass(typeof(Wall)).GetElementCount();
+    if (dry) return "DRYRUN walls=" + walls + "\\ndone=0 skipped=0 failed=0";
+    step = "set";
+    var p = document.ProjectInformation.LookupParameter("Project Name");
+    if (p != null) p.Set("x");
+    return "walls=" + walls + "\\ndone=1 skipped=0 failed=0";
+}
+catch (Exception ex) { return "FAILED @" + step + ": " + ex.GetType().Name + ": " + ex.Message + "\\ndone=0 skipped=0 failed=1"; }
 '''
 SELFTEST_BAD = '''// selftest bad: transactionMode "auto"
 var t = new Transaction(document, "x"); t.Start();
@@ -410,7 +466,7 @@ def selftest():
     report(res)
     r_ok, r_bad = res
     got = {e["id"] for e in r_bad["compile"]["errors"]} | {e["rule"] for e in r_bad["lint"]["errors"]}
-    want = {"CS1061", "L2-nested-transaction", "L4-dryrun", "L6-summary", "L9-ui"}
+    want = {"CS1061", "L2-nested-transaction", "L4-dryrun", "L6-summary", "L9-ui", "L16-outer-catch"}
     passed = r_ok["status"] == "PASS" and want <= got and any(e["line"] == 4 for e in r_bad["compile"]["errors"])
     print("SELFTEST", "PASS" if passed else f"FAIL (bad got {sorted(got)})")
     return 0 if passed else 1

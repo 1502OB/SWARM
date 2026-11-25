@@ -36,7 +36,8 @@ findings depend on this: for internal or bid plots an unsealed interim stamp is 
   Drawing text IS extractable: grep it for tags and cross-references.
   Drawing text is NOT extractable (probe: <what you checked>): read the images; don't conclude something is missing
   because grep can't find it.
-- Zoom / locate: `python C:\Users\Jeremy\swarm\tools\sheet_tool.py zoom|grid|check <sheet pdf> x0,y0,x1,y1 <out_png>`.
+- Zoom / locate: `python C:\Users\Jeremy\swarm\tools\sheet_tool.py render|zoom|text <sheet pdf> ...` (`grid|check`
+  belong to the markup-locator; the guard refuses them for reviewers, Q29).
   All outputs go in your own scratch folder `<run>\scratch\<agent label>\`.
 
 ## Code basis
@@ -71,7 +72,8 @@ first sheet of your pair, with "set_wide": true.
 
 ## Location rect
 For every item give `rect: [x0,y0,x1,y1]` in PDF points tightly around the issue (min ~40 pt a side), and
-`rect_quality: "exact"` only if you confirmed it with `sheet_tool.py check`, else `"approximate"`.
+`rect_quality: "approximate"`: the markup-locator confirms the rect with `sheet_tool.py check` and upgrades it to
+"exact" (Q29: reviewers cannot run `check`).
 
 ## How to revise
 For every item give `revise_how` (Revit/AutoCAD steps: view, element/type, parameter or cell, value) and `who`:

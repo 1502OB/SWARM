@@ -128,6 +128,10 @@ For each task the orchestrator lists whose {MAN}/<task-id>.write.json has status
    edit check the text actually prints in the cell it was put in, that a deleted range took its titles AND rows,
    that header rows do not clip their text and the schedule did not grow wider than the kept header; notes and
    keyed-note tags must clear pipes, cleanouts/fixtures and other annotations.
+   Cross-document moves and copied text (LESSONS R129/A56, 2026-11-25 (ATZ pass), VSM/EBR): compare each moved sheet
+   with the source sheet's plot for view graphics (grids printed, arch background weight and poche, border bar weight,
+   schedule header boxes, cut lines); a difference is a FAIL naming the category. New AutoCAD text must read
+   horizontally (a copy that kept a vertical source's rotation is a FAIL).
 4. Write {MAN}/<task-id>.visual.json: {{"run_id","task_id","status":"PASS|FAIL|unavailable","reason":"plain
    language","crops":[paths],"export":"<pdf path>"}}.
 If a requested sheet PDF is missing, write status "unavailable" and report its sheet number.
@@ -235,6 +239,14 @@ Cycle cap (R28/R57): you get cycles 1 and 2 only, and a dry-run-driven design it
 of cycle 2, if the cause is geometry/design rather than an API fact, say "stop: ask Jeremy or change the approach"
 with the simpler option you see (fewer legs, a manual list). Every cycle writes a debug.json with the run id the
 orchestrator gave you; if none was given, ask for it ("run_id": "unknown" is not allowed).
+File names (R117, 2026-11-25 (ATZ)): cycle 1 writes {MAN}/<task-id>.debug.json, cycle n >= 2 writes
+{MAN}/<task-id>.debug.c<n>.json; never overwrite an earlier cycle's file (ATZ-R17 ran 6 versions under one debug.json).
+Known causes (LESSONS R116-R124, ATZ): a bare 'Object reference' / 'target of an invocation' with no stage = a Revit
+call outside the top-level try (L16: move it inside, add stage tags); InvalidObjectException after Delete/RollBack =
+a pre-captured wrapper read (R119: capture plain values); a timeout on a connected-fitting resize = the "Disconnect
+the family from the network?" modal (R118: delete + recreate, or DialogBoxShowing Cancel); "angle too small or too
+large" on NewTeeFitting = the R107 wye method once, then the hand-fix list; LoadFamily false with no exception = load
+a local copy (R110); a VSM 'Duplicate Types' timeout = keynote settings differ (R125, a model setting for Jeremy).
 
 When a writer reports failure, the orchestrator gives you the task id, run id and debug cycle (1 = first failure,
 2 = after the opus fix-mode version failed too). Read:
@@ -257,7 +269,7 @@ When a writer reports failure, the orchestrator gives you the task id, run id an
    v6 had to revert it). An error with no location ("bad argument type: consp T"): add stage tags
    (<task>.stage.txt) and ask for a rerun; do not guess. "bad function: '<string>'": a symbol was clobbered by an
    earlier setq in that AutoCAD session (22-022: abs) - say so; the fix is in the session, not the script.
-3. Write {MAN}/<task-id>.debug.json: {{"run_id","task_id","cycle","cause","evidence","fix","new_script",
+3. Write {MAN}/<task-id>.debug.json (cycle >= 2: <task-id>.debug.c<n>.json): {{"run_id","task_id","cycle","cause","evidence","fix","new_script",
    "landed_in_model": "no|maybe|yes (and why)","confidence":"high|medium|low","lesson":"one line or none",
    "chatgpt": null on cycle 1, else {{"status","conversation_id","adopted","why"}}}}.
 Hand back to the orchestrator. Reply in at most 5 lines: cause, new script path, confidence (cycle 2: ChatGPT adopted
@@ -292,7 +304,7 @@ write("retro", fm(
     "End-of-run review: reads every write, verify, visual and debug manifest of the run, finds what failed, rolled back or needed a debug cycle, and proposes one-line conventions for the revit-conventions / acad-conventions skills in retro/<run-id>.md. Never edits a skill.",
     ["Read", "Write", "Glob"], "sonnet") + f"""You are retro. At the end of a run the orchestrator gives you the run id.
 
-Read every {MAN}/*.write.json, *.write.log.md, *.verify.json, *.visual.json, *.debug.json and *.chatgpt.json that carries this run id.
+Read every {MAN}/*.write.json, *.write.log.md, *.verify.json, *.visual.json, *.debug.json, *.debug.c<n>.json (R117) and *.chatgpt.json that carries this run id.
 Identify anything that failed, was rolled back, or needed a debug cycle. For each, propose a one-line convention or
 rule for ~/.claude/skills/revit-conventions/SKILL.md (or ~/.claude/skills/acad-conventions/SKILL.md if the lesson is
 AutoCAD-specific). Check {SWARM}/LESSONS.md and both skills first: if the rule is already there, say so instead of

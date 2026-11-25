@@ -11,7 +11,7 @@ Usage (Windows PowerShell 5.1):
   powershell ... -File xl_ole.ps1 rowfmt <spec.json> <out.json>    row height / font size of a block (values kept)
   powershell ... -File xl_ole.ps1 close <keep|discard>
 
-rowfmt spec: {"sheet":"Sheet1","range":"A3:B119","row_height":12.75,"font_size":9}  (either property optional)
+rowfmt spec: {"sheet":"Sheet1","range":"A3:B119","row_height":12.75,"font_size":9,"valign":"center"}  (each property optional; valign top|center|bottom)
   Sets RowHeight on every row of the range and Font.Size on its cells; values are checked unchanged afterwards
   and everything (heights, sizes, values) is restored if anything changed. Reports before/after per row.
 
@@ -349,13 +349,15 @@ switch ($Mode) {
         $ws = $wb.Worksheets.Item([string]$spec.sheet)
         $rng = $ws.Range([string]$spec.range)
         if ($rng.Cells.Count -gt 4000) { 'REFUSED: range larger than 4000 cells'; exit 3 }
-        $vals = @(); foreach ($c in @($rng.Cells)) { $vals += , @($c, $c.Value2, $c.Font.Size) }
+        $vals = @(); foreach ($c in @($rng.Cells)) { $vals += , @($c, $c.Value2, $c.Font.Size, $c.VerticalAlignment) }
         $rows = @(); foreach ($r in @($rng.Rows)) { $rows += , @($r, $r.RowHeight) }
+        $vmap = @{ top = -4160; center = -4108; bottom = -4107 }
         try {
             if ($null -ne $spec.row_height) { foreach ($r in $rows) { $r[0].RowHeight = [double]$spec.row_height } }
             if ($null -ne $spec.font_size) { $rng.Font.Size = [double]$spec.font_size }
+            if ($null -ne $spec.valign) { $k = ([string]$spec.valign).ToLower(); if (-not $vmap.ContainsKey($k)) { throw "valign must be top|center|bottom" }; $rng.VerticalAlignment = $vmap[$k] }
         } catch {
-            foreach ($r in $rows) { $r[0].RowHeight = $r[1] }; foreach ($v in $vals) { $v[0].Font.Size = $v[2] }
+            foreach ($r in $rows) { $r[0].RowHeight = $r[1] }; foreach ($v in $vals) { $v[0].Font.Size = $v[2]; $v[0].VerticalAlignment = $v[3] }
             Out-Json ([ordered]@{ applied = 0; error = $_.Exception.Message; restored = $true }) $Arg2
             "FAILED (restored): $($_.Exception.Message)"; exit 5
         }
@@ -367,8 +369,38 @@ switch ($Mode) {
             "FAILED: values changed in $($bad -join ',') (all restored)"; exit 5
         }
         $per = @(); foreach ($r in $rows) { $per += [ordered]@{ row = $r[0].Row; height_before = $r[1]; height_after = $r[0].RowHeight } }
-        Out-Json ([ordered]@{ applied = 1; sheet = $ws.Name; range = $spec.range; rows = $per; font_size_after = $rng.Cells.Item(1, 1).Font.Size }) $Arg2
+        Out-Json ([ordered]@{ applied = 1; sheet = $ws.Name; range = $spec.range; rows = $per; font_size_after = $rng.Cells.Item(1, 1).Font.Size; valign_after = $rng.Cells.Item(1, 1).VerticalAlignment }) $Arg2
         "rowfmt ok: $($spec.range) height=$($spec.row_height) font=$($spec.font_size), values unchanged -> $Arg2"
+    }
+    'deleterow' {
+        # Arg1 = spec.json {"sheet":"S","row":7,"expect":{"A7":"LAV-2","B7":"..."}}, Arg2 = out.json.
+        # Deletes ONE whole worksheet row (cells below shift up) after every expect cell's text contains its value.
+        # Added 2026-11-24 (25-045 S45-R1-T1, Jeremy asked for the duplicate LAV-2 row to be deleted).
+        $xl = Get-Xl; $wb = Get-EmbeddedWb $xl
+        $spec = Get-Content -Raw -Path $Arg1 | ConvertFrom-Json
+        $ws = $wb.Worksheets.Item([string]$spec.sheet)
+        $row = [int]$spec.row
+        if ($row -lt 1) { 'REFUSED: row must be >= 1'; exit 3 }
+        $problems = @()
+        if ($null -eq $spec.expect) { $problems += 'expect is required' }
+        else {
+            foreach ($p in $spec.expect.PSObject.Properties) {
+                $c = $ws.Range([string]$p.Name)
+                if ([int]$c.Row -ne $row) { $problems += "$($p.Name) is not on row $row"; continue }
+                if (-not ([string]$c.Text).Contains([string]$p.Value)) { $problems += "$($p.Name): '$($c.Text)' does not contain '$($p.Value)'" }
+            }
+        }
+        if ($problems.Count -gt 0) {
+            Out-Json ([ordered]@{ applied = 0; problems = $problems }) $Arg2
+            "REFUSED: " + ($problems -join ' | '); exit 3
+        }
+        $urBefore = $ws.UsedRange.Address($false, $false)
+        $deleted = @(); foreach ($c in @($ws.Rows.Item($row).Cells)) { if ([string]$c.Formula -ne '') { $deleted += [ordered]@{ cell = $c.Address($false, $false); text = [string]$c.Text } } ; if ($c.Column -gt 60) { break } }
+        [void]$ws.Rows.Item($row).Delete(-4162)   # xlShiftUp
+        $xl.Calculate()
+        Out-Json ([ordered]@{ applied = 1; sheet = $ws.Name; row = $row; deleted_cells = $deleted
+            used_range_before = $urBefore; used_range_after = $ws.UsedRange.Address($false, $false) }) $Arg2
+        "deleterow ok: row $row on '$($ws.Name)' deleted -> $Arg2"
     }
     'close' {
         $xl = Get-Xl; $wb = Get-EmbeddedWb $xl

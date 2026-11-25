@@ -57,8 +57,9 @@ write("sheet-reviewer", fm(
 - Issues that repeat on every sheet (title block fields, seal, issue list, general notes) go in ONCE, with
   "set_wide": true, on your first sheet only; the consolidation step merges them across reviewers.
 - Location: name the tile and the nearest grid/room/tag, and add "rect": [x0,y0,x1,y1] (unrotated page points,
-  from tiles.json plus your estimate) when you can, so markups land on the right spot. Add "rect_quality": "exact"
-  only after `check` confirmed the rectangle, else "approximate".
+  from tiles.json plus your estimate) when you can, so markups land on the right spot. Always "rect_quality":
+  "approximate": `sheet_tool check` is the markup-locator's (the guard refuses it for reviewers), and the locator
+  upgrades confirmed rects to "exact" (Q29, 26030 ATZ QAQC1: every reviewer reported "check blocked").
 - Decisions the brief lists as already made are not findings.
 - Fixture tags and DFU: read them on the enlarged plans only; tag overlaps on the overall plan are not findings.
 - A sheet number missing from a partial set is not a finding; flag only a callout, index entry or note that points
@@ -172,7 +173,7 @@ Write <output>/<SHEET>.json as soon as each sheet is done (the orchestrator give
    "code": {{"edition": "...", "section": "...", "citation_basis": "reference|brief|recalled",
             "requirement": "...", "observed": "quoted values + your arithmetic"}}}}]}}
 must-fix = a plan checker would issue a correction; should-fix = likely comment or field problem; nice-to-have =
-clarity. Location rects follow the same rules as sheet-reviewer ("rect_quality": "exact" only after `check`).
+clarity. Location rects follow the same rules as sheet-reviewer ("rect_quality": "approximate"; the markup-locator confirms it, Q29).
 Reply: sheets reviewed, item counts by priority, how many citations are "recalled", sheets not reviewed. At most 4 lines.
 """)
 

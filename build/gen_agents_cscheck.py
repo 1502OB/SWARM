@@ -37,7 +37,7 @@ Task id, run id, the script(s) ({SCRIPTS}/<task-id>[.v<n>].cs and its .cleanup.c
 `{CS_CHECK} <script.cs> [<cleanup.cs> ...] --evidence`
 It wraps each file in the bridge's own template (namespace AIGeneratedCode, Execute(Document document, object[]
 parameters), usings System / Linq / Autodesk.Revit.DB / Autodesk.Revit.UI / Collections.Generic), compiles with the
-plugin's Roslyn against RevitAPI.dll 2025, and lints the contract (L1-L15: transactionMode header vs Transaction use,
+plugin's Roslyn against RevitAPI.dll 2025, and lints the contract (L1-L16: transactionMode header vs Transaction use,
 ["dryrun"] support, done= summary line, document guard, no UI / active-view / process calls, writer_guard deny list,
 return size). Exit 0 = PASS, 1 = FAIL, 2 = tool problem (report "unavailable" and stop; never guess a compile result).
 A compile PASS proves every Revit type, member and overload exists in 2025; you do not re-check members by hand.
@@ -93,6 +93,16 @@ with the reason, not a FAIL. Never waive a compile error.
   unscaled, or header row heights set without the computed height, are major; text notes moved between sheets other
   than CopyElements one at a time + delete is minor. Enum members revit_api_check.py reports NOT FOUND are not
   findings (it does not index enums, R58): the compile decides.
+- 2026-11-25 (ATZ + VSM; R116-R134): lint L16-outer-catch on a writing script (no top-level try whose catch returns
+  FAILED @<stage>, or a Revit call before it) is a blocker you cannot overrule (ATZ-R2-T1/R13-T1 returned bare
+  exceptions). Major: a change script whose dry run gives no would_edit count or that returns success on done=0
+  (R122); a delete stage that commits without its rebuild's dry-run GO (R101); reading a wrapper captured before
+  Delete/RollBack (R119); a size change on a connected fitting without a DialogBoxShowing Cancel handler (R118); a
+  probe that reports GO for a fitting it never created in a rolled-back SubTransaction (R124); one row's label column
+  reused for another (R120); TagText matched with Contains on a formatted number (R121); cross-document copies without
+  the keynote-settings check and result file (R125/R126), with a hard-coded count (R127), case-insensitive parameter
+  matching (R128), SetLinePatternId with InvalidElementId (R131), or a dry run whose failure capture ignores warnings
+  (R134).
 - Cleanup script: deletes exactly the created elements,
   taking ids from parameters, and returns what it deleted.
 - The scripting-lessons pitfalls (systems merge on commit, cap placement, connector-based checks, namespaces, etc.).

@@ -204,6 +204,9 @@ run(WG, ["script-debugger"], "Edit", {"file_path": f"{MANS}/C22-R8-T1.verify.jso
 run(WG, ["script-debugger"], "Edit", {"file_path": f"{SW}/build/gen_agents.py"}, BLOCK, "debugger: Edit build/gen_agents.py")
 # ChatGPT second-opinion log (R100, 2026-11-20)
 run(WG, ["script-debugger"], "Write", {"file_path": f"{MANS}/C22-R8-T1.chatgpt.json"}, ALLOW, "debugger: Write chatgpt.json")
+run(WG, ["script-debugger"], "Write", {"file_path": f"{MANS}/C22-R8-T1.debug.c2.json"}, ALLOW, "debugger: Write cycle-2 debug.c2.json (R117)")
+run(WG, ["scripter"], "Write", {"file_path": f"{MANS}/C22-R8-T1.debug.c2.json"}, BLOCK, "scripter: Write debug.c2.json (debugger only)")
+run(WG, ["script-debugger"], "Write", {"file_path": f"{MANS}/C22-R8-T1.debug.cx.json"}, BLOCK, "debugger: debug.cx.json is not a cycle file")
 run(WG, ["scripter"], "Write", {"file_path": f"{MANS}/C22-R8-T1.chatgpt.json"}, BLOCK, "scripter: Write chatgpt.json (debugger only)")
 run(WG, ["script-checker"], "Write", {"file_path": f"{MANS}/C22-R8-T1.chatgpt.json"}, BLOCK, "script-checker: Write chatgpt.json")
 
@@ -246,6 +249,16 @@ run(WG, ["script-checker"], "Write", {"file_path": f"{SW}/scripts/CB6-R1-T5.v3.c
 run(WG, ["script-checker"], "Edit", {"file_path": f"{SW}/scripts/CB6-R1-T5.lsp"}, BLOCK, "script-checker: Edit a .lsp")
 run(WG, ["script-checker"], "Write", {"file_path": f"{SW}/23-073_x/manifests/CB6-R1-T5.expected.json"}, BLOCK,
     "script-checker: Write the scripter's expected.json")
+
+# ---- 2026-11-25: excel-writer xl_ole.ps1 modes (LESSONS X4 rowfmt, X6 deleterow) ----
+XG = "excel_bash_guard.py"
+XL = f"powershell -NoProfile -ExecutionPolicy Bypass -File {SW}/tools/xl_ole.ps1"
+run(XG, [], "Bash", {"command": f'{XL} deleterow "{SW}/m/T.xl_del.json" "{SW}/m/T.xl_del_out.json"'}, ALLOW,
+    "excel: deleterow (X6)")
+run(XG, [], "Bash", {"command": f'{XL} rowfmt "{SW}/m/T.xl_rowfmt.json" "{SW}/m/T.out.json"'}, ALLOW, "excel: rowfmt (X4)")
+run(XG, [], "Bash", {"command": f'{XL} deleterow "{SW}/m/T.json" "{SW}/m/o.json"; calc'}, BLOCK,
+    "excel: deleterow chained with ';'")
+run(XG, [], "Bash", {"command": f'{XL} droprows "{SW}/m/T.json"'}, BLOCK, "excel: unknown mode")
 
 # ---- 2026-11-17: '&' inside a quoted path (LESSONS O32) and home-folder junction aliases (LESSONS O33) ----
 VC = f"{SW}/tools/visual_crop.py"

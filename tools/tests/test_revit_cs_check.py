@@ -19,6 +19,8 @@ OK_BODY = ('bool dry = parameters != null && parameters.Length > 0 && Convert.To
            'if (dry) return "DRYRUN\\ndone=0 skipped=0 failed=0";\n'
            'var p = document.ProjectInformation.LookupParameter("Project Name"); if (p != null) p.Set("x");\n'
            'return "ok\\ndone=1 skipped=0 failed=0";\n')
+# R116 / L16: the whole body sits inside one top-level try whose catch returns FAILED @<stage>
+OK_BODY = 'string step = "start";\ntry {\n' + OK_BODY + '} catch (Exception ex) { return "FAILED @" + step + ": " + ex.Message; }\n'
 
 
 def rules(code, name="T1.cs"):
@@ -40,6 +42,27 @@ def test_blank_keeps_lines_and_offsets():
     b = rc.blank(code)
     assert len(b) == len(code) and b.count("\n") == code.count("\n")
     assert "x" not in b and "c" not in b.split("\n")[1] and b.endswith("d")
+
+
+def test_lint_outer_catch_l16():
+    # R116 (ATZ-R2-T1/R13-T1): a writing script with no top-level try/catch-return, or a Revit call before it, is an error
+    bare = ('// t: transactionMode "none". parameters: ["dryrun"]\nbool dry = true;\n'
+            'if (dry) return "DRYRUN\\ndone=0 skipped=0 failed=0";\n'
+            'var t = new Transaction(document, "x"); t.Start(); document.Delete(new ElementId(5L)); t.Commit();\n'
+            'return "ok\\ndone=1 skipped=0 failed=0";\n')
+    e, _ = rules(bare)
+    assert "L16-outer-catch" in e
+    pre = OK_BODY.replace('string step = "start";', 'var el = document.GetElement(new ElementId(5L));\nstring step = "s";')
+    e, _ = rules(HDR + pre)
+    assert "L16-outer-catch" in e
+    lam = OK_BODY.replace('string step = "start";', 'Func<long, Element> get = id => document.GetElement(new ElementId(id));'
+                          '\nbool ws = document.IsWorkshared;\nstring step = "start";')
+    e, w = rules(HDR + lam)
+    assert "L16-outer-catch" not in e | w, (e, w)
+    ro = ('// t: transactionMode "none". parameters: ["dryrun"]\n'
+          'var c = new FilteredElementCollector(document).GetElementCount();\nreturn "n=" + c + "\\ndone=0 skipped=0 failed=0";\n')
+    e, w = rules(ro)
+    assert "L16-outer-catch" in w and "L16-outer-catch" not in e
 
 
 def test_lint_clean_script():

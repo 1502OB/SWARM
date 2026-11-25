@@ -1,6 +1,6 @@
 """PreToolUse guard for excel-writer's Bash: only the xl_ole.ps1 helper, one command, no chaining.
 
-Allowed: powershell -NoProfile -ExecutionPolicy Bypass -File <...>/swarm/tools/xl_ole.ps1 <status|read|set|close> [args]
+Allowed: powershell -NoProfile -ExecutionPolicy Bypass -File <...>/swarm/tools/xl_ole.ps1 <status|read|range|set|copyfmt|rowfmt|deleterow|close|oleopen|restore> [args]
 Exit code 2 blocks the call.
 """
 import json
@@ -14,7 +14,7 @@ from paths import SWARM, fwd, path_re  # noqa: E402  (2026-11-09: no hard-coded 
 XL_OLE = fwd(SWARM / "tools/xl_ole.ps1")
 ALLOW = re.compile(
     r'^powershell(\.exe)? -NoProfile -ExecutionPolicy Bypass -File "?' + path_re(SWARM, "tools/xl_ole.ps1") + r'"? '
-    r'(status|read|range|summary|set|copyfmt|rowfmt|close|oleopen|restore)( ("[^"$`;&|<>]*"|[^\s"$`;&|<>]+)){0,2}\s*$',
+    r'(status|read|range|summary|set|copyfmt|rowfmt|deleterow|close|oleopen|restore)( ("[^"$`;&|<>]*"|[^\s"$`;&|<>]+)){0,2}\s*$',
     re.IGNORECASE,
 )
 

@@ -112,3 +112,20 @@ Read before writing or fixing a script. New lessons go here, plus a one-line poi
   variable after a built-in in any case (max, min, abs, list, length, last, angle, distance, type, read, ...), and
   declare every foreach variable local. `tools/lsp_collide.py` reports these as `subr-shadows` (names from the
   autocad-api skill's autolisp.json): treat any hit as a bug.
+
+## 2026-0022 EBR 2026-11-24 (Eastern Breezeway, AO E1 title block; swarm/LESSONS.md A54-A58)
+- PlotConfiguration.GetPaperSize returns the RAW media size and ignores PlotRotation: never pick a rotation by looping
+  values until w > h (EBR-SHT-T1 v2 left rotation 0 and rolled back). Decide once: landscape title block on portrait
+  media (DWG To PDF ARCH E1 = 30 x 42) -> PlotRotation 1; check the EFFECTIVE size (swap sides for 1/3). Keep page
+  setup in its own -PAGE / -PAGECHECK / -PAGECLEAN commands so a plot-setting failure never rolls back content (A54).
+- AO E1 on DWG To PDF: the standard ARCH_E1_(30.00_x_42.00_Inches) media has printable margins (plot shifted ~2 in,
+  title-block column clipped). Use ARCH_full_bleed_E1_(30.00_x_42.00_Inches), origin 0,0, rotation 1, grayscale.ctb (A55).
+- New text made by vla-Copy of a plotting source inherits the source ROTATION: EBR-TAG-T1 copied 1F1A, a vertical
+  margin note, and every tag printed at 90 deg while the API CHECK passed. Set Rotation 0 (and direction) on the copy,
+  prefer a horizontal source, and CHECK rotation. A cond clause whose test is (and ...) with no body returns T into
+  strcat: setq the value inside the test and return it (EBR-SHT-T1 v4) (A56).
+- 'Zone must be empty' checks treat long axis-aligned LINEs that run past the zone (sheet division lines: '104 MED 2'
+  y 21.28/21.75 in the right strip, x 16.974 full height) as BOUNDARIES: a clash for placement, not content. Scouts
+  report them as zone splits; the orchestrator reads them before writing zone bounds (A57).
+- Bridge `drawing open` still returns 'opened' without opening in AutoCAD 2027 (A3): the orchestrator opens with
+  Invoke-Item between agent runs and checks for one acad process (A58).

@@ -276,6 +276,15 @@ every task for it is blocked with that reason.
   never a FilledRegion on a sheet (first check whether the text is live); expected pre-existing counts come from the
   scout baseline. Condensate disposal options are gravity only (raise the receptor, lower/reroute the drain, another
   receptor or tie-in): never a condensate pump (J14).
+- 2026-11-25 (ATZ + VSM; LESSONS R113/R123/R128-R133): a tie or reroute whose scouted topology does not match the plan
+  (connector size or direction, stubs < 0.3 ft) goes on the manual list before scripting (R123); riser/isometric tag
+  cleanup is a drafter hand item, never a task (R113). A move of sheets/views between models is planned in this order:
+  (1) Jeremy's hand step Transfer Project Standards > Object Styles + Line Weights (no API for the line weight table,
+  R130); (2) LOAD: project info, levels, keynote settings, every type the copied annotation uses (R132), sheet/view/
+  viewport parameters in exact case (R128); (3) a VIEW GRAPHICS task (per-view link settings, category V/G not driven
+  by the template, filters, view-range levels, phase filter; R129/R133) BEFORE any sheet is built; (4) sheets and
+  views; (5) the hand list (tags that need their hosts, area/room tags). Checklist: revit-conventions scripting-lessons
+  "Village move VSM".
 - Anything you classified with low confidence goes under Open questions; plan only the confident changes.
 - DFU / pipe-size cascades: trace from a fresh dump taken after the latest edits (never an earlier cascade JSON).
   Enter each fixture as a source, read each label's value at its leader-arrow tip, match labels by location (not
@@ -425,8 +434,11 @@ You are not an engineer: you never decide values. Inputs and their new values co
   results are typed values, not formulas.
 - The OLE2FRAME shows a FIXED window of the sheet: rows written below the last visible row are clipped on the
   sheet and the frame does not grow (22-001 sheet index). Report the frame corners before/after and say when new
-  rows fall outside the old window. xl_ole.ps1 has a `rowfmt` mode (row height / font size, values checked) but
-  excel_bash_guard.py does not allow it until Jeremy adds it; if it is blocked, report and stop.
+  rows fall outside the old window. xl_ole.ps1 `rowfmt` sets row height / font size / vertical alignment
+  ("valign": top|center|bottom), checks values unchanged and restores everything on any change. `deleterow` (X6,
+  2026-11-25 (ATZ pass); 25-045 duplicate LAV-2 row) deletes ONE worksheet row, cells shifting up, only after every
+  `expect` cell on that row contains its text: spec {{"sheet","row","expect":{{"A7":"LAV-2"}}}}. Use it only when the
+  manifest names the row and quotes Jeremy asking for the delete; report deleted_cells and the used range before/after.
 - AutoCAD agents run strictly one at a time.
 - Before editing, confirm the frame you open is the one that PRINTS the target sheet: a workbook can hold several
   sheets and the frame shows only one (22-022: DDCE0 displayed the Fixture Unit calc while its hidden PRESSURE LOSS

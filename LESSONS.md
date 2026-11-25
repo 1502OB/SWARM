@@ -240,6 +240,11 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
 | A51 | AutoLISP symbols are case-insensitive: a local named `mAx` IS the SUBR `MAX`, and its value shadows MAX for every callee ("bad function: 1014.72"). Never name locals after SUBRs in any case (max, min, abs, list, length, last, angle, distance...), and declare every foreach variable local. lsp_collide misses case clashes with SUBRs -> add a check. | 23-082 PAD PAD-R1-T1, 2026-11-16 | → scripter, tools/lsp_collide.py (rolled in 2026-11-20) |
 | A52 | Revision cloud arcs must bulge OUTWARD. With CLOCKWISE vertices (A10, swl:cloudpts) the bulge must be NEGATIVE (e.g. -0.52): a positive bulge puts each arc on the right of travel = inside, and Jeremy flagged the whole PAD set "your clouds are inverted". Scripts copied +0.52 from the first entmade cloud and every verifier passed it (they checked "bulge == 0.52", not direction). Pass -bulge to swl:entmake-cloud / swl:cloud-check for CW clouds; verifiers and visual checks must test arc direction (sagitta outside the vertex box). Fix for existing clouds: negate group 42 (scripts/PAD-R1-T1e.lsp). | 23-082 PAD, 2026-11-16 | → scripter, verifier, visual-verifier, swarm_lib (default sign) (rolled in 2026-11-20) |
 | A53 | 22-022 helpers in swarm_lib (retro P11/P12/P16): swl:delete-verified (vla-Delete, count only vlax-erased-p), swl:copy-text (vla-Copy of a plotting TEXT/MTEXT, set string, move to point), swl:plot-prep / swl:plot-restore (CTAB, MSpace off + CVPORT 1, regen, output folder; restore CTAB + BACKGROUNDPLOT) around the firm plot call. All [AX]: not covered by the headless test; first live use is their test. plotfns.lsp / _plot1 is not in this checkout, so no wrapper for the call itself. | 22-022 retro 20261106-1325 | → swarm_lib, scripter (scripting-lessons 22-022) |
+| A54 | PlotConfiguration.GetPaperSize returns the RAW media size and ignores PlotRotation. Never pick a rotation by looping values until w>h (v2 left rotation 0 and rolled back). Decide once: landscape title block on portrait media (DWG To PDF ARCH E1 = 30 x 42) -> PlotRotation 1; check the EFFECTIVE size (swap sides for 1/3). Keep page setup in its own -PAGE/-PAGECHECK/-PAGECLEAN commands so a plot-setting failure never rolls back sheet content. | 2026-0022 EBR EBR-SHT-T1 v2/v3, 2026-11-24 | -> scripter (rolled in 2026-11-25) |
+| A55 | AO E1 title block on DWG To PDF: the standard ARCH_E1_(30.00_x_42.00_Inches) media has printable margins (plot shifted ~2 in, title-block column clipped). Use ARCH_full_bleed_E1_(30.00_x_42.00_Inches), origin 0,0, rotation 1, grayscale.ctb (memory plot-sets-grayscale). | 2026-0022 EBR test plot 1, 2026-11-24 | -> scripter, acad-writer (rolled in 2026-11-25) |
+| A56 | New text made by vla-Copy of a 'plotting source' inherits the source ROTATION: EBR-TAG-T1 copied 1F1A, a vertical margin note on the AO title block, and all tags printed rotated 90 deg (API CHECK passed). Always set Rotation 0 (and direction) on the copy, prefer a horizontal source, and CHECK rotation. Also: a cond clause whose test is (and ...) with no body returns T into strcat (stringp T) - setq the value inside the test and return it (P6 again, EBR-SHT-T1 v4). | 2026-0022 EBR EBR-TAG-T1, v4 PAGEPLAN, 2026-11-24 | -> scripter, verifier (rolled in 2026-11-25) |
+| A57 | 'Zone must be empty' checks must treat long axis-aligned LINEs that run past the zone (sheet division lines, e.g. AO E1 lines on '104 MED 2' at y 21.28/21.75 in the right strip, x 16.974 full height) as BOUNDARIES (clash for placement, not content). Scouts must report such division lines as zone splits; the orchestrator must read them before writing zone bounds (EBR lower band was split at x 16.974). | 2026-0022 EBR EBR-NOTE-T1, EBR-SCH-T1, 2026-11-24 | -> scripter, acad-scout, orchestrator (rolled in 2026-11-25) |
+| A58 | Bridge `drawing open` still returns 'opened' without opening (A3 confirmed again in AutoCAD 2027, 11-24): orchestrator opens with Invoke-Item between agent runs, then checks one acad process. | 2026-0022 EBR, 2026-11-24 | -> acad-ops (already A3), orchestrator (MARKUP 23g, rolled in 2026-11-25) |
 
 ## X. Excel OLE calcs
 
@@ -250,6 +255,7 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
 | X3 | `close discard` does not undo embedded edits. Close Excel when done. | memory close-excel-when-done; Encino | → excel-writer (already) |
 | X4 | An OLE2FRAME shows a FIXED window of the workbook: rows written past it are clipped and the frame does not grow (22-001 sheet index, +22 rows). Shrink row height/font (new `xl_ole.ps1 rowfmt`; excel_bash_guard.py must allow it - Jeremy's call, the classifier blocked Claude editing the hook) or resize, then test-plot. Jeremy re-pasted the table by hand this time. | 22-001 testplot test1/test2 | → excel-writer, scripter; excel_bash_guard allows rowfmt (installed 2026-11-20) |
 | X5 | Formula edits in an embedded workbook only through `xl_ole.ps1 set` with `formula_approval.by` (Jeremy's approval for that batch) and `from_formula` matching the live formula (commit a3203ca). Pick the OLE frame whose PLOTTED content shows the target: an OLE frame shows one sheet of a multi-sheet workbook (22-022 P001: DDCE0 showed the FU calc, hidden pressure sheet took the edits; D7966 printed). Typed values in calc cells are reported, not edited. | 22-022 C22-R1-T1, retro P10/P18 | → excel-writer, revision-planner |
+| X6 | xl_ole.ps1 gained `deleterow` (deletes ONE worksheet row, cells shift up, only after every `expect` cell on that row contains its text; reports deleted cells and used range) and `rowfmt` "valign" (top/center/bottom, restored on failure); excel_bash_guard allows deleterow. Use deleterow only when the manifest names the row and quotes Jeremy's request. | 25-045 S45-R1-T1 (duplicate LAV-2 row), 2026-11-24 | → excel-writer, hooks (rolled in 2026-11-25) |
 
 ## Q. QAQC review and markups
 
@@ -564,3 +570,53 @@ Since 2026-11-02 project folders use their Egnyte names (O21); the short names a
 - Still open: R46 (roof drain family connector, Jeremy); P12 root cause of text that does not plot (needs a live
   test plot); first live Revit run with codeFile (new MCP session needed: running sessions keep the old server).
 - Not installed: the --health-only patch named in README (never applied on this machine).
+
+## 2026-11-20 26030 Aritzia QAQC1 (run 20261120-ATZ)
+- O50 (fixed 2026-11-25: sheet_tool accepts swarm-data junction targets): sheet_tool.py resolves outputs and refuses anything outside swarm/, so a QAQC project folder that is a swarm-data junction fails prep. Made 26030 a real folder under swarm/. Either let sheet_tool accept swarm-data or create QAQC project folders as real folders.
+- Q29 (fixed 2026-11-25: reviewers give "approximate", locators own `check`): REVIEW_BRIEF_TEMPLATE asks reviewers for rect_quality "exact" via `sheet_tool check`, but the guard allows sheet-reviewer only render|zoom|text (and code-reviewer none). Every reviewer reported "check blocked". Drop that line from the template (locators own `check`) or allow `check` for reviewers.
+
+## 2026-11-20 run 20261120-ATZ (Aritzia 26030)
+- R101: Never commit a DELETE stage before its REBUILD stage has a dry-run GO. Pair delete+rebuild in one TransactionGroup, or dry-run the rebuild against the deleted state inside a rolled-back group first. (ATZ-R20: T1 committed, T2 NO_GO on 2in vent connector, cleanup could not recreate the 2x1-1/2 reducer; recovered only by discard-and-reopen to last sync.)
+- R102: Before setting a title-block date, scout which parameter the TB label reads. Here Date = sheet shared param "Project Start Date" (GUID 3d21cc7a-...), not SHEET_ISSUE_DATE.
+- R103: Rerouting a vent: read the fixture vent connector size first; a smaller route needs the reducer kept/recreated (CPC 703.2 no-shrink guard caught it).
+- O51: Discarding unsynced bad work: user closes without saving, reopens from ACC, then a read-only reconcile against the last-sync checklist before any write.
+- V12: visual-verifier crops land in swarm/crops (visual_crop.py), not the run folder; don't ask for another path.
+- R104: A text-edit task's OLD fragment can be changed by an earlier task in the same run (R5 -> R26 SK1); name the schedule holding each cell and re-derive OLD from earlier tasks' scripts. Give text scripts a read-only "find" mode.
+- R105: Before a schedule-row script, scout which schedule actually prints the strings (R27 v2 searched the symbol legend; abbreviations were in 'P5.00 ABBREVIATIONS').
+- R106: NewTeeFitting for a wye on a sloped main can refuse ("angle too small or too large"); pit-drain ties go to the hand-fix list after one NO_GO.
+- O52: Read tracker answers at EVERY bridge-idle point, not only at planned decision points (missed R26/R27 answers for ~40 min tonight; 3rd miss this run).
+- R107: 45-deg wye on a sloped horizontal main: NewTeeFitting (BreakCurve + 3 connectors) is refused ("angle too small or too large"). Working method (R13-T2 A.v4, from ChatGPT 2nd opinion manifests/ATZ-WYE.chatgpt.md): place the wye FamilyInstance, set 'Nominal Radius n' instance params via an explicit sizeMap param ("1,2|3" = run|branch for 120D_Wye 45 Deg Tee Reducing), 3D-align run to the main's flow vector + roll about it for arm grade, BreakCurve after placement, trim to port origins, ConnectTo, check |Nport+Nend|.
+- R108: Scripted Document.LoadFamily(path) returned false (no exception) for 3 library .rfa files on L: tonight (filter, dual check, floor sink) though the files are complete OLE files; families were not already loaded. Unresolved: plan for a hand load, don't burn script cycles.
+- R109: Resizing a connected wye branch via its 'Nominal Radius 2' instance parameter inside a delete+rebuild group worked with a DialogBoxShowing auto-cancel in place (R17-T2 v4); no modal appeared.
+- O53: A tag/size stage should skip (report) views with crop off or unlocked 3D instead of failing the whole task.
+- O54: After editing expected.json, re-run script-checker before the writer: the gate refuses a stale precheck (R20-T3).
+- R110: R108 resolved: copy the library .rfa to a local temp folder and call document.LoadFamily(localPath, out Family) in the script's own Transaction (mode none) with a logging dialog handler; 3 Revit 2021 families loaded first try.
+- R111: Switching a Revit link to ByHostView makes it follow the host phase filter; plumbing plans on 'Show All' then show the arch demolition. Use Custom + SetPhase/SetPhaseFilter (link ids, e.g. 'Show Previous + New') with no LinkedViewId to hide demo and keep linked annotations off.
+- R112: Library accessories may size by TYPE params (filter: 'Connection RADIUS' drives the connector) and some only regenerate in their rated range (dual check 1/4-3/8 fails at 1/2); probe with a +0.01 driver search before placing.
+- O55: Deleting a pipe piece cascades to its size tags; scripts that split pipes must record and re-create dependent tags (ACC-T2 v5/v6).
+- R113: Auto-layout of pipe tags in isometric risers did not converge in 5 versions: a tag's measured text box shifts 0.5-1.8 in and changes width with leader side/geometry, so predicted boxes are wrong, and measure-after-place loops reject or cross. Don't script riser tag cleanup; hand it to the drafter (or only offer duplicate-tag deletion).
+- R114: View3D.Duplicate(WithDetailing) then shrinking the section box leaves the copied tags/notes of hosts outside the box floating in the view; delete orphan annotation in the same task (or duplicate without detailing and re-tag).
+- R115: Sheet 'Drawn By' can live in 3 params (SHEET_DRAWN_BY, shared 'MEP_Drawn By', a second 'Drawn By'); set all by Definition.Name and check the printed sheet.
+- O56: Packing viewports: measure GetBoxOutline+label first and try all orders; the title-strip edge fell back to tbMinX+3.6 ft (geometry not found).
+
+## 2026-11-25 roll-in: ATZ + VSM retros, EBR (A54-A58), 25-045 Excel
+- From retro/20261120-ATZ.md: R116 one top-level try/catch-return around everything (P3; revit_cs_check L16, error on
+  writing scripts), R117 debug cycle files <task>.debug.c<n>.json + per-task failure counter (P8; writer_guard, MARKUP
+  23b), R118 no size change on a connected fitting without a DialogBoxShowing Cancel handler (P1), R119 no wrapper reads
+  after Delete/RollBack (P2), R120 label column per row (P4), R121 tag match by regex / text box / apply the resolved
+  subset (P5), R122 NO_OP = failed (P6), R123 connector topology baseline (P7), R124 fitting feasibility by a rolled-back
+  SubTransaction (P9). P10 (line budget, precheck hash of expected.json) already covered: codeFile roll-in + O54 gate.
+- From retro/20261123-VSM.md: R125 keynote settings / Duplicate Types dialog (P1), R126 result file for modal-prone
+  scripts (P2), R127 live counts, scouts quote the query (P3), R128 exact-case parameter match (P4), R129 view-graphics
+  task before sheets (P5), R130 line weights hand step first (P6), R131 SetLinePatternId (P7), R132 annotation types in
+  LOAD (P8), R133 view-range levels (P9), R134 warnings count in the dry run (P10), O57 tracker before the first scout
+  (P13), O54 extended (writer never re-checks, P14). P11 = R116; P12 superseded by codeFile. The cross-document checklist
+  is in revit-conventions scripting-lessons "Village move VSM".
+- ATZ run notes R101-R115, O51-O56, V12 rolled into scripter / revit-scout / revit-writer / verifier / script-checker /
+  script-debugger briefs and scripting-lessons "Aritzia 26030 ATZ"; O50 and Q29 fixed in tools; EBR A54-A58 rolled into
+  scripter, acad-scout, verifier, visual-verifier and acad-conventions scripting-lessons; X6 into excel-writer.
+- Files: build/lessons_2026-11-25.py (briefs, skills, MARKUP 23), tools/revit_cs_check.py (L16 + test),
+  claude/hooks/writer_guard.py (+3 tests), tools/sheet_tool.py, templates/REVIEW_BRIEF_TEMPLATE.md,
+  build/gen_agents_qaqc.py, tools/xl_ole.ps1 + claude/hooks/excel_bash_guard.py (X6).
+- Still open: R46 (roof drain family connector, Jeremy); P12 (22-022) text that does not plot; first live run with
+  codeFile and with L16 in force (older scripts in scripts/ fail L16; only new versions must pass).

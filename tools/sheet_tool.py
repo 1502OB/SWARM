@@ -41,9 +41,27 @@ def _comparable(path):
     return Path(name)
 
 
+def _out_roots():
+    """swarm/ itself plus the targets of project folders under it that are junctions/symlinks into swarm-data
+    (O50, 2026-11-25: 26030 QAQC prep failed because its project folder resolved outside swarm/)."""
+    roots = [_comparable(OUT_ROOT)]
+    try:
+        for child in SWARM.iterdir():
+            try:
+                real = child.resolve()
+                if child.is_dir() and _comparable(real) != _comparable(OUT_ROOT / child.name):
+                    roots.append(_comparable(real))
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return roots
+
+
 def _out(path):
     p = Path(path).resolve()
-    if _comparable(OUT_ROOT) not in _comparable(p).parents:
+    cp = _comparable(p)
+    if not any(r == cp or r in cp.parents for r in _out_roots()):
         sys.exit(f"output {p} is outside {OUT_ROOT}; write renders to your scratch folder under swarm/")
     p.parent.mkdir(parents=True, exist_ok=True)
     return p

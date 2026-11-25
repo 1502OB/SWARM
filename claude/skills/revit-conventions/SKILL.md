@@ -48,6 +48,14 @@ description: Firm rules for changing a Revit model through the revit-mcp bridge 
 - Sheet text anchors to a named ScheduleSheetInstance; drawing-area edges from the plotted border; sticky schedule
   text is in Header cells; schedule width follows the body columns; header row heights never auto-fit (R93, R96,
   R97; details in scripting-lessons "Erewhon 26021 ECM").
+- Every statement sits inside one top-level try whose catch returns "FAILED @<stage>: ..." (lint L16, R116). A change
+  task whose dry run would edit 0 is NO_OP = failed (R122). Never commit a delete before its rebuild has a dry-run GO
+  (R101). No size change on a network-connected fitting without a DialogBoxShowing Cancel handler; prefer delete +
+  recreate (R118). Learn whether a fitting can be made by creating it in a rolled-back SubTransaction, not from
+  geometry (R124). Details in scripting-lessons "Aritzia 26030 ATZ" (2026-11-25 (ATZ pass)).
+- Moving sheets/views between models: follow the checklist in scripting-lessons "Village move VSM": Jeremy's line
+  weights / object styles transfer first, LOAD of types, parameters and keynote settings, a view-graphics task before
+  any sheet (R125-R134).
 
 ## Revision clouds via the API
 - Draw the boundary loop **CLOCKWISE**: bottom-left → top-left → top-right → bottom-right → back to bottom-left.

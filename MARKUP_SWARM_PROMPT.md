@@ -419,3 +419,26 @@ Start by listing inputs/ and asking for the project number, name, and which CAD 
        signature y (no LibreOffice).
     i. Own-Transaction scripts (R99): for layout/sheet changes the scripter's dry run performs everything and rolls its
        own Transaction back; script-checker overrules the L5 'dryrun-order' lint for it. The writer probe still runs.
+23. 26030 Aritzia run 20261120-ATZ, 24-071 Village move 20261123-VSM, 2026-0022 EBR (2026-11-25 roll-in, LESSONS
+    O50-O57, R116-R134, A54-A58):
+    a. Tracker first (O57): publish the run tracker before the first scout, with the planned steps, and name it in the
+       first scout brief (VSM published it only when Jeremy asked). Read tracker answers at EVERY bridge-idle point,
+       not only at planned decision points (O52: answers sat ~40 min, the 3rd miss in one run).
+    b. Failure counter (R117/R100): keep one per task in STATUS.md, counting dry-run-driven redesigns too, and apply
+       the ladder by it (1 debugger c1, 2 opus fix mode, 3 debugger c2 + ChatGPT, then FAIL / manual). Debug cycles
+       write <task>.debug.json, then <task>.debug.c<n>.json (ATZ: R17 ran 6 versions with one debug.json, no c2).
+    c. Re-check after edits (O54): after ANY edit of a task's script or expected.json, re-run script-checker before
+       launching the writer; writers never re-check (VSM-VG-T1 B went NOT_RUN).
+    d. Modal dialogs (R118/R125/R126): when a script header says "dialog likely" (cross-document copies with differing
+       keynote settings, connected-fitting resizes), tell Jeremy on the tracker before the call and poll
+       tools/dialog_check.ps1; after a timeout the writer rewrites write.json from the result file. Aligning keynote
+       settings in the target is a model setting: Jeremy's OK first.
+    e. Cross-document moves (R129/R130): Jeremy's Transfer Project Standards (Object Styles + Line Weights) is the FIRST
+       step, before any script; the planner's view-graphics task runs before sheets are built (checklist in
+       revit-conventions scripting-lessons "Village move VSM").
+    f. Discarding unsynced bad work (O51): Jeremy closes without saving and reopens from ACC; then a read-only reconcile
+       scout against the last-sync checklist before any write.
+    g. AutoCAD (A57/A58): read the scout's division lines before writing zone bounds; open DWGs with Invoke-Item
+       between agent runs (bridge `drawing open` says 'opened' without opening) and check for one acad process.
+    h. QAQC (O50/Q29): sheet_tool accepts swarm-data junction targets, so QAQC project folders may stay junctions;
+       reviewers give rect_quality "approximate" and the markup-locator confirms rects with `check`.
