@@ -76,6 +76,11 @@ PROFILES = {
     # 2026-11-09: writers keep validate.py; acad-writer adds the DSD writer and the attempt-log merge
     "acad-writer": [script(sw("validate.py")), script(sw("tools/acad_dsd.py")), script(sw("tools/merge_ops.py"))],
     "acad-ops": [script(sw("tools/merge_ops.py"))],
+    # 2026-11-25 (swarm review, fix 5): completeness agents run their own exact-arithmetic / diff tools instead of
+    # handing each run back to the orchestrator. set_assemble splice (writes the dated set) stays with the orchestrator.
+    "calc-auditor": [script(sw("tools/sheet_tool.py"), r"(render|zoom|text) "), script(sw("tools/calc_check.py"))],
+    "set-assembler": [script(sw("tools/sheet_tool.py"), r"(render|zoom|text) "),
+                      script(sw("tools/set_assemble.py"), r"(diff|index) ")],
 }
 SHEET = "python .../swarm/tools/sheet_tool.py"
 
@@ -121,6 +126,8 @@ def main():
                        "(several sheets: --sheets-file <list.txt>; quote any path with \"&\"), or "
                        "python .../swarm/tools/merge_ops.py <args>",
         "acad-ops": "python .../swarm/tools/merge_ops.py <args>",
+        "calc-auditor": f"{SHEET} render|zoom|text <args>, or python .../swarm/tools/calc_check.py <checks.json> <out.json>",
+        "set-assembler": f"{SHEET} render|zoom|text <args>, or python .../swarm/tools/set_assemble.py diff|index <args>",
         "script-checker": "python .../swarm/tools/revit_cs_check.py <script.cs> [--json <out.json>] [--quiet], or "
                           "python .../swarm/validate.py <schema> <file>",
         "revit-writer": "python .../swarm/validate.py <schema> <file>, or python .../swarm/tools/revit_cs_check.py "

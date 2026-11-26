@@ -77,6 +77,19 @@ and any required approval, with `retry <stage-id> --after <new-precheck-stage>` 
 An uncertain write holds the bridge lane until read-only reconciliation establishes the outcome and the
 orchestrator runs `resolve <stage-id> pass|fail`.
 
+Since 2026-11-25 the queue also does the orchestrator's mechanical steps (one command, one JSON line back):
+
+- `start <stage>` checks the shared project pointer (`swarm/manifests/project.json`) and restores this project's
+  copy from `<project_folder>/manifests/project.json` if another session overwrote it (`init` writes that copy).
+- `finish <stage> pass --scout <scout.json>` merges a scout into the model index; `--invalidate <scope> ...` /
+  `--invalidate-all` invalidate after a write; an `uncertain` bridge finish invalidates the whole document. Set the
+  stable document ids once with `project --revit-document-id <id> [--acad-document-id <path>]`.
+- `fail-cycle <task> --cause "..." [--landed yes|no|maybe] [--approved-extra "..."]` counts failures and prints the
+  next step of the debug ladder (debugger c1 sonnet, debugger c2 opus + ChatGPT, then exit 4 = ask Jeremy);
+  `cycles` lists every task's count.
+- `tools/make_task.py derive <base task.json> --task-id <id> --operation export-sheet|publish-sheet|read-only`
+  writes and validates the task.json for derived tasks.
+
 Use lanes `revit`, `acad`, `offline`, `tracker`, and `human`. The CAD lanes each admit one active stage.
 Offline stages can overlap CAD stages. Use `report` to see per-task queue wait, lane time, human and tracker
 wait, and reconciliation time. With `run_id` set in the active project pointer, the timing hook also

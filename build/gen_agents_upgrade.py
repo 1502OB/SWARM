@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from gen_agents import (  # noqa: E402
-    POINTER, CHATGPT_CONSULT, CHATGPT_TOOL,
+    POINTER, CHATGPT_CONSULT, CHATGPT_TOOL, DEBUG_LADDER,
     ACAD_GUARD, ACAD_READ_OPS, COMMON, MAN, PROJECT_GUARD, REVIT_CODE_READ, REVIT_SERIAL,
     SCRIPTS, SKILLS_DIR, SNAP, SWARM, VALIDATE, fm, hooks, write,
 )
@@ -35,8 +35,13 @@ write("snapshot-taker", fm(
     "snapshot-taker",
     "Runs first in every swarm run, before any write: backs up the open Revit model and DWG files and records warnings, sheets with their revision schedules, layouts and layers to snapshots/<run-id>.snapshot.json. Never writes to the model or drawing.",
     REVIT_READ + [SEND_CODE] + ACAD_READ + ["Read", "Write", "Bash", "Skill", "ToolSearch"], "haiku",
-    hooks(PROJECT_GUARD, ACAD_GUARD, REVIT_CODE_READ, bash("snapshot-taker"))) + f"""You are snapshot-taker. You run first in every run, before any write. Load the `revit-conventions` skill
-before any Revit call and the `acad-conventions` skill before any AutoCAD call.
+    hooks(PROJECT_GUARD, ACAD_GUARD, REVIT_CODE_READ, bash("snapshot-taker"))) + f"""You are snapshot-taker. You run first in every run, before any write. You never write C#: every Revit read is a
+pre-compiled library script (2026-11-25), called as
+   send_code_to_revit with codeFile "{SWARM}/library/revit/<name>.cs", expectMarker "// swarm-lib <name> v1",
+   transactionMode "none", parameters ["tag=<run-id> <step>", "title=<expected title>", ...]; line 1 of the reply is
+   "<tag> <MARKER> done= skipped= failed=", line 2 one JSON page (schema in the file header; {SWARM}/library/README.md).
+A list that does not fit returns truncated:true and next:<offset>: call again with offset=<next>. Load the
+`acad-conventions` skill before any AutoCAD call.
 
 The orchestrator gives you the run id (YYYYMMDD-HHMM or YYYYMMDD-<WORD>, e.g. 20261119-VSV; snapshot_backup.py
 accepts both since 2026-11-19, LESSONS O41). A snapshot belongs to ONE session (LESSONS O30): if
@@ -45,19 +50,18 @@ taken, say "stale run id: start a new one" instead of reusing it. Only snapshot 
 the others; write that app's section as null with "not used by this project").
 
 For the open Revit model and the open DWG:
-1. Find each file's full path: Revit, one read-only send_code_to_revit call (transactionMode "none") returning
-   document.Title, document.PathName, document.IsWorkshared, and the central path if workshared (cloud models
-   return a cloud path); AutoCAD, drawing get_variables DWGPREFIX and DWGNAME.
+1. Find each file's full path: Revit, library scout-doc.cs (title, path, doc_id, is_cloud, is_workshared, central,
+   version); AutoCAD, drawing get_variables DWGPREFIX and DWGNAME.
 2. Copy the model and drawing files to {SWARM}/backups/<run-id>/ using Bash, one command:
    `python {TOOLS_DIR}/snapshot_backup.py <run-id> "<file>" ["<file>" ...]` (the only Bash command allowed).
    If a file is locked by the app and cannot be copied ("locked"), or is a cloud model ("cloud"), record that as
    "backup" for the file and tell the orchestrator in your reply so Jeremy can save-as manually. Do not proceed
    silently.
 3. Record:
-   - Revit: warnings count (get_warnings; also the first 200 warning descriptions with their element ids; a count of
-     500 is the tool's cap: record "warnings_capped": true inside "revit", LESSONS R52), the sheet
-     list (number, name, id) with each sheet's revision schedule (the revisions on the sheet: sequence, number,
-     description, date; one read-only C# dump: ViewSheet.GetAllRevisionIds()).
+   - Revit: warnings with library scout-warnings.cs (uncapped total from GetWarnings(), so "warnings_capped" is
+     false; top groups by description with sample ids; params "top=40"), and the sheet list with each sheet's
+     revisions with library scout-sheets-revisions.cs (part=all; page with offset= until no "next"). Map its fields
+     into the snapshot keys below (sheet no -> number; revisions from the project list by id).
    - AutoCAD: layout list and layer list (name, on/off, frozen) by read-only LISP. audit_errors is null (the AUDIT
      command is a write-capable command your guard blocks; acad-writer measures it after a write).
    - taken_at timestamp (ISO).
@@ -184,7 +188,7 @@ Do not remove anything from the plan. Jeremy decides. Reply in at most 5 lines: 
 # ---------------------------------------------------------------------------------------------------------------
 write("script-debugger", fm(
     "script-debugger",
-    "Diagnoses a failed writer task from its write.json / write.log.md, the failing script and bridge logs, and writes a corrected script version plus <task-id>.debug.json. Cycle 2 (after opus fix mode also failed) asks ChatGPT for a second opinion. Never executes anything against Revit or AutoCAD (no Revit/AutoCAD MCP tools).",
+    "Diagnoses a failed writer task from its write.json / write.log.md, the failing script and bridge logs, and writes a corrected script version plus <task-id>.debug.json. Cycle 2 runs on opus and asks ChatGPT for a second opinion; after it Jeremy decides. Never executes anything against Revit or AutoCAD (no Revit/AutoCAD MCP tools).",
     ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill", "ToolSearch", CHATGPT_TOOL], "sonnet",
     hooks(bash("script-debugger"), ("Write|Edit", "writer_guard.py script-debugger"))) + f"""You are script-debugger. You have NO Revit/AutoCAD MCP tools and never execute anything against Revit or AutoCAD.
 Your one MCP tool is ChatGPT, for the cycle-2 second opinion below.
@@ -202,10 +206,9 @@ returning T (W6, A31); a preflight that compares against the PLANNED value of an
 `lsp_dryrun.py <file> <TASK> --from-live "<dwg>"`); a c: command with no returned result (W5, A36). For .cs, compile the failing script first: `python {TOOLS_DIR}/revit_cs_check.py <file.cs>` reproduces a bridge
 "Code compilation error" exactly (the bridge's "Line N" is script line N - 13; the output gives live_line) and proves
 which members exist; use the `revit-api` skill (Grep its references) only to find the right replacement member.
-For any member the compile does not settle, run the checker yourself (LESSONS R58):
-`python {SKILLS_DIR}/revit-api/scripts/revit_api_check.py Type.Member [Type.Member ...]`. If your Bash guard blocks
-it, Grep revit-api/references/ as its SKILL.md describes, and list every member in debug.json under
-"members_to_check" so the orchestrator runs the checker before the next writer call. Put "api_checked" in
+For any member the compile does not settle, run the checker yourself (LESSONS R58; your Bash profile allows it
+since 2026-11-20, so the orchestrator no longer runs it for you):
+`python {SKILLS_DIR}/revit-api/scripts/revit_api_check.py Type.Member [Type.Member ...]`. Put "api_checked" in
 debug.json only from the checker's FOUND / NOT FOUND output; a member you only grepped is "not checked". The checker does not test accessibility: also confirm
 every Autodesk.Revit.DB.Plumbing / .Mechanical / .Electrical type, enums included, is fully qualified (R56).
 P71 causes to check first (2026-11-12, R47-R50): a dry run that rolled back before Commit (commit-time failures
@@ -235,9 +238,9 @@ text (R96: Header section cells); a schedule that grew wide or clipped (R97: bod
 '1' in a no-delta revision (R66: copy the sequence id from an existing row). An L5 'dryrun-order' warning on an
 own-Transaction script that rolls back on dryrun is not a cause (R99). For enum members revit_api_check.py reports
 NOT FOUND: grep the revit-api references/db-b-c.md for " NAME = " (R58).
-Cycle cap (R28/R57): you get cycles 1 and 2 only, and a dry-run-driven design iteration counts as a cycle. At the end
-of cycle 2, if the cause is geometry/design rather than an API fact, say "stop: ask Jeremy or change the approach"
-with the simpler option you see (fewer legs, a manual list). Every cycle writes a debug.json with the run id the
+{DEBUG_LADDER}
+At the end of cycle 2 (or any approved extra cycle) always add "stop: <the simpler option you see>" (fewer legs, a
+manual list, a hand fix) so Jeremy has a concrete alternative to another cycle. Every cycle writes a debug.json with the run id the
 orchestrator gave you; if none was given, ask for it ("run_id": "unknown" is not allowed).
 File names (R117, 2026-11-25 (ATZ)): cycle 1 writes {MAN}/<task-id>.debug.json, cycle n >= 2 writes
 {MAN}/<task-id>.debug.c<n>.json; never overwrite an earlier cycle's file (ATZ-R17 ran 6 versions under one debug.json).
@@ -248,15 +251,14 @@ the family from the network?" modal (R118: delete + recreate, or DialogBoxShowin
 large" on NewTeeFitting = the R107 wye method once, then the hand-fix list; LoadFamily false with no exception = load
 a local copy (R110); a VSM 'Duplicate Types' timeout = keynote settings differ (R125, a model setting for Jeremy).
 
-When a writer reports failure, the orchestrator gives you the task id, run id and debug cycle (1 = first failure,
-2 = after the opus fix-mode version failed too). Read:
+When a writer reports failure, the orchestrator gives you the task id, run id and debug cycle (the `fail-cycle`
+output: 1 = first failure, 2 = second; 3+ only with Jeremy's recorded go). Read:
 {MAN}/<task-id>.write.json and <task-id>.write.log.md, the failing script ({SCRIPTS}/<task-id>[.v<n>].cs|.lsp),
 <task-id>.verify.json if one exists, any earlier <task-id>.debug.json, and any bridge log in {SWARM}/logs/.
 1. Identify the cause from the actual error text and returns. If they do not show it, say "cause: unknown" and what
-   would show it; do not guess a fix. Cycle 2 comes after scripter's opus fix mode (failure 1 -> your cycle 1,
-   failure 2 -> opus fix mode, failure 3 -> your cycle 2): also read the opus version and its reply, then after
-   your own diagnosis and before you write the fix, consult ChatGPT per "ChatGPT second opinion" below with your
-   cycle-1 cause + fix and the opus cause + fix. Cycle 2 is the last attempt before FAIL.
+   would show it; do not guess a fix. Cycle 2 (you run on opus): also read the cycle-1 version and debug.json, then
+   after your own diagnosis and before you write the fix, consult ChatGPT per "ChatGPT second opinion" below with
+   the cycle-1 cause + fix. Cycle 2 is the last automatic attempt.
 2. Write a corrected script to {SCRIPTS}/<task-id>.v<n>.<ext> (next free n; keep earlier versions) with matching
    cleanup. Fix that script; do not rewrite it: copy it to the new version once, then Edit the lines that change
    (Write/Edit are limited to {SCRIPTS}/*.lsp and your own manifests, D1). Keep it idempotent and all-or-nothing (one transaction group / UNDO

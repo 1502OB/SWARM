@@ -98,7 +98,7 @@ if (beach == null) return fail("level SURF - BEACH (ProjectElevation 132.48) not
 double BEACHZ = beach.ProjectElevation;
 Autodesk.Revit.DB.Plumbing.PipeType pipeT = null;
 foreach (var ptq in new FilteredElementCollector(document).OfClass(typeof(Autodesk.Revit.DB.Plumbing.PipeType)).Cast<Autodesk.Revit.DB.Plumbing.PipeType>())
-    if (ptq.Name == "Gravity Flow - Wye Combo 8th Bend") pipeT = ptq;
+    if (string.Equals((ptq.Name ?? "").Trim(), "Gravity Flow - Wye Combo 8th Bend", StringComparison.OrdinalIgnoreCase)) pipeT = ptq;  // G3: trimmed, case-insensitive (2026-11-25)
 if (pipeT == null) return fail("pipe type 'Gravity Flow - Wye Combo 8th Bend' not found");
 long[] mainKnown = new long[] { 22819714, 22820775, 22828886, 22820365, 22820407 };
 foreach (long mk0 in mainKnown)

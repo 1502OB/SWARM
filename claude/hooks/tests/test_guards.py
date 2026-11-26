@@ -141,6 +141,16 @@ run(BG, ["scripter"], "Bash", {"command": f'python {SW}/tools/lsp_lint.py a.lsp 
 run(BG, ["scripter"], "Bash", {"command": f'python {SW}/tools/file_deliverable.py a b c d'}, BLOCK,
     "scripter: another agent's tool")
 
+# ---- 2026-11-25: completeness agents run their own tools ----
+run(BG, ["calc-auditor"], "Bash", {"command": f'python {SW}/tools/calc_check.py {SW}/x/a.checks.json {SW}/x/a.out.json'},
+    ALLOW, "calc-auditor: calc_check")
+run(BG, ["calc-auditor"], "Bash", {"command": f'python {SW}/tools/set_assemble.py splice a b c'}, BLOCK,
+    "calc-auditor: set_assemble")
+run(BG, ["set-assembler"], "Bash", {"command": f'python {SW}/tools/set_assemble.py diff a.pdf P1.01 b.pdf 1 out'},
+    ALLOW, "set-assembler: diff")
+run(BG, ["set-assembler"], "Bash", {"command": f'python {SW}/tools/set_assemble.py splice a.pdf b.pdf P1.01=c.pdf'},
+    BLOCK, "set-assembler: splice stays with the orchestrator")
+
 # ---- writer_guard acad-ops ----
 run(WG, ["acad-ops"], A + "system", lisp(
     '(vla-activate (vla-item (vla-get-documents (vlax-get-acad-object)) "P003 - PLUMBING (CALCS).dwg"))'), ALLOW,

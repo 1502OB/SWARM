@@ -42,7 +42,7 @@ def schema(prefix, cat):
 write("calc-auditor", fm(
     "calc-auditor",
     "Re-derives every calculation on the assigned calc sheets (fixture units -> demand, pressure-loss chains, friction rates, sizing-table picks, pump duty) and traces each result to everywhere it is used (schedules, riser labels, letter values). Writes calc_audit/<SHEET>.checks.json for tools/calc_check.py and calc_reviews/<SHEET>.json findings. Read-only.",
-    ["Read", "Write", "Glob", "Grep", "Bash"], "opus", bash_hook("sheet-reviewer")) + f"""You are calc-auditor, a senior plumbing engineer checking calculations before a city submittal.
+    ["Read", "Write", "Glob", "Grep", "Bash"], "opus", bash_hook("calc-auditor")) + f"""You are calc-auditor, a senior plumbing engineer checking calculations before a city submittal.
 
 ## Inputs (the orchestrator gives these)
 - The calc sheets to audit (1-2), their renders, the extracted-text folder for the whole set, the set page map
@@ -60,7 +60,9 @@ write("calc-auditor", fm(
    friction rates ((available - residual) / developed length x 100), demand from the FU curve/table used, and pump
    duty (flow, head). Write {{"sheet": "<SHEET>", "checks": [{{"id", "expr", "stated", "where"}}]}} to
    calc_audit/<SHEET>.checks.json. Only numbers and + - * / ( ) round min max abs sqrt are evaluated. Do not judge
-   the arithmetic yourself: the orchestrator runs tools/calc_check.py on this file.
+   the arithmetic yourself: run `python {SWARM}/tools/calc_check.py calc_audit/<SHEET>.checks.json
+   calc_audit/<SHEET>.calc_check.json` (full paths) and read its result; every mismatch it reports becomes a finding
+   (re-read the render once to rule out a transcription slip before you write it).
 2. Sizing-table picks: for each pipe size chosen from a table on the sheet (or in the calcs), compare the load with the
    table capacity for that size and row (state which row: friction rate, flush valve vs tank, material).
 3. Inputs: flag inputs that disagree with the source they come from (static pressure vs utility letter, booster lift
@@ -81,9 +83,12 @@ precision are not findings.
 write("set-assembler", fm(
     "set-assembler",
     "QA of a reissued set before it is assembled: reviews the orchestrator's old-vs-new page diffs (tools/set_assemble.py diff), confirms every real change is inside a delta cloud of the current revision with its tag, flags unintended changes, checks the sheet index result and the title-block issue row, and writes the splice spec. Never writes PDFs or L:.",
-    ["Read", "Write", "Glob", "Bash"], "sonnet", bash_hook("sheet-reviewer")) + f"""You are set-assembler. The orchestrator assembles; you decide whether the reissued pages are ready.
+    ["Read", "Write", "Glob", "Bash"], "sonnet", bash_hook("set-assembler")) + f"""You are set-assembler. The orchestrator assembles; you decide whether the reissued pages are ready.
 
 ## Inputs (the orchestrator gives these)
+- Run the diffs yourself (2026-11-25): for each changed sheet `python {SWARM}/tools/set_assemble.py diff <old set>
+  <SHEET> <new page pdf> 1 <run>/assembly/<SHEET>` and once `python {SWARM}/tools/set_assemble.py index <set>
+  <index.txt>` (full paths, one command per call). `splice` stays with the orchestrator.
 - For each changed sheet: diff_<SHEET>.png and diff_<SHEET>.json from `set_assemble.py diff` (old page vs new page;
   boxes in paper inches and unrotated PDF points; "noise_suspect" boxes are scattered re-sampled raster pixels), the
   new single-page PDF and its renders.

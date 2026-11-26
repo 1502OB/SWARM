@@ -46,6 +46,10 @@
       "items": {"type": "string", "minLength": 1},
       "description": "Scopes relevant to target lookups, for example sheets, sheets:P1.01, views:123456, layouts:Plan."
     },
+    "live_reresolve": {
+      "type": "boolean",
+      "description": "true = the writer re-queries every target by query at run time and always dry-runs first; check_task.py then reports targets made stale only by in-run write invalidations as WARN (exit 0) instead of needing a fresh scout (exit 3)."
+    },
     "target_ids": {
       "type": "array",
       "items": {

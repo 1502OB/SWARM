@@ -236,6 +236,62 @@ def test_validate_sibling_task_id():
     assert r.returncode == 1 and "does not match" in r.stdout, r.stdout  # pattern, no sibling needed
 
 
+# ---- make_task.py derive: export / publish / read-only task.json inherit run and document from the base
+def _mk(folder, base, *args):
+    r = subprocess.run([sys.executable, str(TOOLS / "make_task.py"), "derive", str(base), *args],
+                       capture_output=True, text=True)
+    return r.returncode, (json.loads(r.stdout) if r.stdout.strip() else None), r.stderr
+
+
+def _base(folder, app="revit"):
+    base = Path(folder) / "E37-R1-T4.task.json"
+    base.write_text(json.dumps({"run_id": "20261125-AAA", "task_id": "E37-R1-T4", "app": app,
+                                "operation": "move-tags", "document_id": "C:/A.rvt", "target_ids": [111, 222],
+                                "change": "move", "source_requirement_id": "R4",
+                                "assigned_agent": "revit-writer" if app == "revit" else "acad-writer"}),
+                    encoding="utf-8")
+    return base
+
+
+def test_make_task_export_sheet_valid_and_inherits():
+    folder = tempfile.mkdtemp(prefix="swmk_")
+    base = _base(folder)
+    code, out, err = _mk(folder, base, "--task-id", "E37-R1-T4vx", "--operation", "export-sheet",
+                         "--sheets", "P1.01", "P2.01")
+    assert code == 0, err
+    task = json.loads(Path(out["path"]).read_text(encoding="utf-8"))
+    assert (task["run_id"], task["document_id"], task["app"], task["assigned_agent"]) == (
+        "20261125-AAA", "C:/A.rvt", "revit", "revit-writer")
+    assert task["target_ids"] == [] and "P1.01, P2.01" in task["change"]
+    assert "library/revit/export-visual-sheet.cs" in task["change"]
+    assert task["source_requirement_id"].startswith("derived from E37-R1-T4")
+    v = subprocess.run([sys.executable, str(REPO / "validate.py"), str(REPO / "schemas" / "task.schema.json"),
+                        out["path"]], capture_output=True, text=True)
+    assert v.returncode == 0, v.stdout
+    assert _mk(folder, base, "--task-id", "E37-R1-T4vx", "--operation", "export-sheet", "--sheets", "P1.01")[0] == 2
+    assert _mk(folder, base, "--task-id", "E37-R1-T4vx", "--operation", "export-sheet", "--sheets", "P1.01",
+               "--force")[0] == 0
+
+
+def test_make_task_publish_read_only_and_refusals():
+    folder = tempfile.mkdtemp(prefix="swmk_")
+    acad = _base(folder, "acad")
+    code, out, err = _mk(folder, acad, "--task-id", "E37-PUB-T4", "--operation", "publish-sheet",
+                         "--sheets", "P1.01", "--out", str(Path(folder) / "sub" / "pub.task.json"))
+    assert code == 0, err
+    task = json.loads(Path(out["path"]).read_text(encoding="utf-8"))
+    assert task["assigned_agent"] == "acad-writer" and "swarm:publish" in task["change"]
+    assert "visual/20261125-AAA/E37-R1-T4/E37-R1-T4.dsd" in task["change"]
+    code, out, _ = _mk(folder, acad, "--task-id", "E37-R1-T4ro", "--operation", "read-only", "--note", "count tags")
+    task = json.loads(Path(out["path"]).read_text(encoding="utf-8"))
+    assert code == 0 and task["target_ids"] == [111, 222] and task["change"].endswith("count tags")
+    assert _mk(folder, acad, "--task-id", "E37-R1-T4vx", "--operation", "export-sheet", "--sheets", "P1")[0] == 2
+    assert _mk(folder, acad, "--task-id", "E37-PUB-T5", "--operation", "publish-sheet")[0] == 2  # no sheets
+    assert _mk(folder, acad, "--task-id", "C22-R1-T4vx", "--operation", "read-only")[0] == 2  # other prefix
+    code, out, _ = _mk(folder, acad, "--task-id", "E37-R1-T4-PUB", "--operation", "publish-sheet", "--sheets", "A")
+    assert code == 1 and out["valid"] is False and not (Path(folder) / "E37-R1-T4-PUB.task.json").exists()
+
+
 if __name__ == "__main__":
     p, f = run_module_tests(globals())
     print(f"test_tools_misc: {p} passed, {f} failed")

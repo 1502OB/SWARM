@@ -185,3 +185,196 @@ def test_verify_sheet_ignores_other_sheet_refs_in_body():
         make_sheet(pdf, "P1.011", "SEE P1.01")
         assert visual_crop.verify_sheet(pdf, 1, "P1.011")["status"] == "verified"
         assert visual_crop.verify_sheet(pdf, 1, "P1.01")["status"] == "needs_visual_title_block_check"
+
+
+# ---- 2026-11-25: fail-cycle ladder, finish index work, project pointer safety, live_reresolve
+def _rq(argv):
+    """Run run_queue.main(argv); returns (exit code, parsed JSON or None, stderr)."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = run_queue.main([str(a) for a in argv])
+        except SystemExit as stop:
+            code = stop.code
+    text = out.getvalue().strip()
+    return code, (json.loads(text) if text else None), err.getvalue()
+
+
+@contextlib.contextmanager
+def _swarm_root():
+    with TemporaryDirectory() as temp:
+        root = Path(temp) / "swarm"
+        (root / "manifests").mkdir(parents=True)
+        with patch.object(model_index, "SWARM", root), patch.object(run_queue, "SWARM", root), \
+                patch.object(check_task, "SWARM", root):
+            yield root
+
+
+def _project(root, number="25-037", run="20261125-AAA", name="25-037_Test", doc="C:/A.rvt"):
+    (root / name / "manifests").mkdir(parents=True, exist_ok=True)
+    data = {"project_number": number, "project_folder": f"swarm/{name}", "task_prefix": "E37",
+            "revit_document_id": doc, "acad_document_id": None, "run_id": run}
+    model_index.save_json(root / "manifests/project.json", data)
+    return data
+
+
+def _plan(root, run="20261125-AAA"):
+    plan = root / "plan.json"
+    model_index.save_json(plan, {"run_id": run, "stages": [
+        {"id": "scout", "task": "E37-R1-T1", "lane": "revit"},
+        {"id": "write", "task": "E37-R1-T1", "lane": "revit", "after": ["scout"]},
+        {"id": "check", "task": "E37-R1-T2", "lane": "offline"}]})
+    return plan
+
+
+def test_fail_cycle_ladder_counts_and_stops():
+    with _swarm_root() as root:
+        _project(root)
+        queue = root / "q.json"
+        assert _rq([queue, "init", _plan(root)])[0] == 0
+        code, out, _ = _rq([queue, "fail-cycle", "E37-R1-T1", "--cause", "compile CS0103"])
+        assert code == 0 and out["failures"] == 1 and out["next"] == "debugger-c1" and out["model"] == "sonnet"
+        assert "needs_jeremy_go" not in out
+        code, out, _ = _rq([queue, "fail-cycle", "E37-R1-T1", "--cause", "dry run redesign", "--landed", "maybe"])
+        assert (code, out["next"], out["model"], out["needs_jeremy_go"]) == (0, "debugger-c2", "opus", True)
+        assert "ChatGPT" in out["note"] and "E37-R1-T1.debug.c2.json" in out["note"]
+        code, out, _ = _rq([queue, "fail-cycle", "E37-R1-T1", "--cause", "verify FAIL"])
+        assert code == 4 and out["next"] == "stop-ask-jeremy" and out["failures"] == 3
+        # Jeremy's answer to that stop upgrades failure 3 (no new count)
+        code, out, _ = _rq([queue, "fail-cycle", "E37-R1-T1", "--cause", "verify FAIL", "--landed", "yes",
+                            "--approved-extra", "one more try, Jeremy 11-25"])
+        assert code == 0 and (out["failures"], out["next"], out["model"], out["needs_jeremy_go"]) == (
+            3, "debugger-extra", "opus", True)
+        history = model_index.load_json(queue)["debug"]["E37-R1-T1"]
+        assert history[-1]["approved_extra"] == "one more try, Jeremy 11-25" and len(history) == 3
+        # the extra cycle fails too: failure 4 stops again unless approved on that call
+        assert _rq([queue, "fail-cycle", "E37-R1-T1", "--cause", "verify FAIL again"])[0] == 4
+        code, out, _ = _rq([queue, "fail-cycle", "E37-R1-T1", "--cause", "x", "--approved-extra", "last one"])
+        assert code == 0 and out["failures"] == 4 and "debug.c4.json" in out["note"]
+        code, out, _ = _rq([queue, "fail-cycle", "E37-R1-T1", "--cause", "again", "--approved-extra", "pre-ok"])
+        assert code == 0 and out["failures"] == 5 and out["next"] == "debugger-extra"
+        code, out, _ = _rq([queue, "cycles"])
+        assert out["cycles"]["E37-R1-T1"]["failures"] == 5 and out["cycles"]["E37-R1-T2"]["failures"] == 0
+        assert _rq([queue, "fail-cycle", "E37-R9-T9", "--cause", "x"])[0] == 2
+        assert run_queue.DEBUG_LADDER[0]["next"] == "debugger-c1" and "fail-cycle" in run_queue.DEBUG_LADDER_DOC
+
+
+def test_finish_merges_scout_invalidates_and_records_attempt():
+    with _swarm_root() as root:
+        _project(root)
+        queue = root / "q.json"
+        out = _rq([queue, "init", _plan(root)])[1]
+        assert out["project"]["revit_document_id"] == "C:/A.rvt" and "warnings" not in out
+        assert (root / "25-037_Test/manifests/project.json").is_file()
+        scout = root / "E37-R1-T1.scout.json"
+        model_index.save_json(scout, {"run_id": "20261125-AAA", "app": "revit", "document_id": "c:\\a.rvt",
+                                      "index_scopes": {"sheets:P1.01": {"complete": True, "entries": [123456]},
+                                                       "views:9": {"complete": True, "entries": [9]}}})
+        assert _rq([queue, "start", "scout"])[1]["pointer"] == "ok"
+        code, out, _ = _rq([queue, "finish", "scout", "pass", "--scout", scout])
+        assert code == 0 and out["index"]["merged"] == ["sheets:p1.01", "views:9"]
+        _rq([queue, "start", "write"])
+        code, out, _ = _rq([queue, "finish", "write", "pass", "--invalidate", "sheets:P1.01"])
+        assert out["index"]["invalidated"] == ["sheets:p1.01"] and out["index"]["reason"] == "write"
+        data = model_index.read_index("revit", "C:/A.rvt", "20261125-AAA")
+        assert list(data["scopes"]) == ["views:9"] and data["invalidated_reason"]["sheets:p1.01"] == "write"
+        assert "sheets:p1.01" in data["stale_scopes"] and not data["invalidated_hard_ns"]
+        attempt = model_index.load_json(queue)["stages"]["write"]["attempts"][-1]
+        assert attempt["index"]["invalidate"] == ["sheets:P1.01"] and attempt["outcome"] == "pass"
+        # offline lanes refuse index work and nothing changes
+        _rq([queue, "start", "check"])
+        assert _rq([queue, "finish", "check", "pass", "--invalidate-all"])[0] == 2
+        assert model_index.load_json(queue)["stages"]["check"]["status"] == "running"
+
+
+def test_finish_uncertain_invalidates_whole_document():
+    with _swarm_root() as root:
+        _project(root)
+        queue = root / "q.json"
+        _rq([queue, "init", _plan(root)])
+        model_index.merge_index("revit", "C:/A.rvt", "20261125-AAA", {
+            "run_id": "20261125-AAA", "app": "revit", "document_id": "C:/A.rvt",
+            "index_scopes": {"views:9": {"complete": True, "entries": [9]}}})
+        _rq([queue, "start", "scout"])
+        code, out, _ = _rq([queue, "finish", "scout", "uncertain"])
+        assert code == 0 and out["index"]["invalidate"] == "document" and out["index"]["reason"] == "uncertain"
+        data = model_index.read_index("revit", "C:/A.rvt", "20261125-AAA")
+        assert not data["scopes"] and "*" in data["invalidated_hard_ns"] and not data["stale_scopes"]
+
+
+def test_start_restores_foreign_pointer_or_refuses():
+    with _swarm_root() as root:
+        ours = _project(root)
+        queue = root / "q.json"
+        _rq([queue, "init", _plan(root)])
+        foreign = {"project_number": "25-061", "project_folder": "swarm/25-061_Other", "run_id": "20261125-ZZZ"}
+        model_index.save_json(root / "manifests/project.json", foreign)
+        code, out, _ = _rq([queue, "start", "scout"])
+        assert code == 0 and out["pointer_restored"] is True and out["status"] == "running"
+        raw = (root / "manifests/project.json").read_bytes()
+        assert not raw.startswith(b"\xef\xbb\xbf") and json.loads(raw)["project_number"] == ours["project_number"]
+        assert json.loads((root / "manifests/project.json.25-061.bak").read_text())["run_id"] == "20261125-ZZZ"
+        # no project copy: refuse with exit 2, nothing started
+        (root / "25-037_Test/manifests/project.json").unlink()
+        _rq([queue, "finish", "scout", "pass"])
+        model_index.save_json(root / "manifests/project.json", foreign)
+        code, out, err = _rq([queue, "start", "write"])
+        assert code == 2 and "no project copy" in err
+        assert model_index.load_json(queue)["stages"]["write"]["status"] == "pending"
+
+
+def test_check_task_live_reresolve_accepts_write_staleness_only():
+    with _swarm_root() as root:
+        run, name = "20261125-AAA", "E37-R1-T1"
+        _project(root)
+        scout = root / f"{name}.scout.json"
+        report = {"task_id": name, "run_id": run, "app": "revit", "document_id": "C:/A.rvt",
+                  "confirmed_target_ids": [123456],
+                  "index_scopes": {"sheets:p1.01": {"complete": True, "entries": [123456]}}}
+        model_index.save_json(scout, report)
+        model_index.merge_index("revit", "C:/A.rvt", run, report)
+        task = root / f"{name}.task.json"
+        spec = {"task_id": name, "run_id": run, "app": "revit", "document_id": "C:/A.rvt",
+                "lookup_scopes": ["sheets:P1.01"], "target_ids": [123456]}
+        model_index.save_json(task, spec)
+        model_index.invalidate("revit", "C:/A.rvt", run, ["sheets:p1.01"], "write")
+        assert check_task.check(task)[3] == ["target 123456 has no current evidence"]  # unchanged without the field
+        model_index.save_json(task, dict(spec, live_reresolve=True))
+        errors, warnings, found, needs = check_task.check(task)
+        assert not errors and not needs and any("stale after in-run write; writer re-resolves" in w for w in warnings)
+        with patch.object(sys, "argv", ["check_task.py", str(task)]), contextlib.redirect_stdout(io.StringIO()):
+            assert check_task.main() == 0
+        scout.unlink()  # the cached stale scope alone also counts
+        assert not check_task.check(task)[3]
+        model_index.save_json(scout, report)
+        model_index.invalidate("revit", "C:/A.rvt", run, ["sheets:p1.01"], "write")
+        model_index.invalidate("revit", "C:/A.rvt", run, ["sheets"], "outside")  # non-write after the evidence
+        assert check_task.check(task)[3] == ["target 123456 has no current evidence"]
+        with patch.object(sys, "argv", ["check_task.py", str(task)]), contextlib.redirect_stdout(io.StringIO()):
+            assert check_task.main() == 3
+
+
+def test_model_index_reason_defaults_and_cli():
+    with _swarm_root() as root:
+        run = "20261125-AAA"
+        model_index.merge_index("acad", "C:/D.dwg", run, {"run_id": run, "app": "acad", "document_id": "C:/D.dwg",
+                                                          "index_scopes": {"layouts:p1": {"complete": True,
+                                                                                          "entries": ["a"]}}})
+        model_index.invalidate("acad", "C:/D.dwg", run, ["layouts:p1"])
+        data = model_index.read_index("acad", "C:/D.dwg", run)
+        assert data["invalidated_reason"] == {"layouts:p1": "write"} and "layouts:p1" in data["stale_scopes"]
+        model_index.invalidate("acad", "C:/D.dwg", run)
+        data = model_index.read_index("acad", "C:/D.dwg", run)
+        assert data["invalidated_reason"] == {"*": "uncertain"} and not data["stale_scopes"]
+        try:
+            model_index.invalidate("acad", "C:/D.dwg", run, (), "bogus")
+        except ValueError:
+            pass
+        else:
+            assert False, "unknown reason must be refused"
+        env = dict(os.environ, SWARM_HOME=str(root))
+        out = subprocess.check_output([sys.executable, str(TOOLS / "model_index.py"), "invalidate", "acad",
+                                       "C:/D.dwg", run, "layouts:p2", "--reason", "outside"], env=env, text=True)
+        assert json.loads(out)["invalidated"] == []
+        hard = model_index.read_index("acad", "C:/D.dwg", run)["invalidated_hard_ns"]
+        assert "layouts:p2" in hard

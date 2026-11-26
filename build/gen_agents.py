@@ -177,6 +177,14 @@ text plus your entry, or write your own <task-id> file. Never overwrite another 
 wiped the run log and had to rebuild it from memory).
 Your final reply to the orchestrator is at most 5 lines: status, manifest path, and any problem."""
 
+# 2026-11-25 (swarm review): agents with no Revit/AutoCAD MCP tools (scripters, script-checker, script-debugger) skip
+# the bridge boilerplate (open-document check, deferred MCP schemas) that only bridge agents need.
+_P0 = COMMON.index("Project: ")
+_P1 = COMMON.index("Files: ")
+_M0 = COMMON.index("MCP tool schemas may be deferred")
+_M1 = COMMON.index("Never save, sync, or close")
+COMMON_OFFLINE = COMMON[:_P0] + COMMON[_P1:_M0] + COMMON[_M1:]
+
 
 # Model policy (Jeremy, 2026-10-19): "haiku" for the read-only scouts; "sonnet" for other
 # mechanical work (extraction, executing prepared scripts, checking expected.json, and writing scripts by
@@ -241,6 +249,9 @@ def harden_writer(lock, warnings):
 - Post warnings: read {warnings} in its own call just before the real run (log it as pre_warnings in
   write.log.md) and again after executing; record the real after-count in write.json as post_warnings (never 0 as a
   placeholder, never a count the script computed inside its transaction: LESSONS R52).
+  Chained baseline (2026-11-25, swarm review): when your prompt gives "pre_warnings: <n> from <source>" (the previous
+  task's post_warnings or the SYNC A count, with no write, sync, reopen or hand edit since), log that as pre_warnings
+  with its source and skip the pre-run read; the after-count is still read live.
 - One current record (R53): <task-id>.write.json always describes the task's CURRENT state. Rewrite it after each
   stage or retry (status, COUNTS, created ids, post_warnings); never leave a superseded "timeout" in place after a
   later success. Stage detail goes in sections of write.log.md, never in <task>.A.write.json side files.
@@ -346,10 +357,20 @@ You only have Revit READ tools and read-only send_code_to_revit. You cannot and 
   export_elements_data or analyze_model_statistics can list sheets (category OST_Sheets / Sheets).
 - If the task asks you to repeat a call N times (concurrency probes), make the calls back to back,
   record each response's success flag, a short fingerprint (e.g. view name + element count), and any error text.
+- Library first (2026-11-25): for the document check, sheets + revisions, warnings and per-element baselines use the
+  pre-compiled read-only scripts instead of writing C# (each compile error on the bridge costs a round trip):
+  send_code_to_revit with codeFile "{SWARM}/library/revit/<name>.cs", expectMarker "// swarm-lib <name> v1",
+  transactionMode "none", parameters ["tag=<run-id> <step>", "title=<expected title>", ...]; line 1 of the reply is
+  "<tag> <MARKER> done= skipped= failed=", line 2 one JSON page (schema in the file header; {SWARM}/library/README.md).
+  scout-doc.cs = first call of a run (title, path, doc_id, version, modified, active view; title= refuses a wrong
+  document); scout-sheets-revisions.cs; scout-warnings.cs (uncapped total, groups, ids= filter);
+  scout-elements.cs (ids=, params=A|B, conn=1: category, family, type, level, workset, checkout + owner, location,
+  parameters, connectors; "missing" ids). A truncated page returns next:<offset>: call again with offset=<next>.
 - The generic read tools have returned blanks or wrong ids for sheet numbers, text note text, match lines, view
-  references and templates. For those, or whenever a list must be complete, run ONE read-only C# dump with
-  send_code_to_revit (transactionMode "none"; a guard blocks transactions, saves and file access) that returns
-  compact JSON.
+  references and templates. For those, or whenever a list must be complete and no library script covers it, run
+  ONE read-only C# dump with send_code_to_revit (transactionMode "none"; a guard blocks transactions, saves and file
+  access) that returns compact JSON. Copy calls from the library scripts (they compile) rather than writing from
+  memory.
 - Sheet Number can read blank on the sheet while its title block instance has it: report both and match sheets by
   the title block number, else by name.
 - For views that will be tagged, report whether each is a dependent view (GetPrimaryViewId) and its parent.
@@ -442,22 +463,36 @@ Load the `acad-conventions` skill first (Skill tool).
 {COMMON}
 """)
 
+# 2026-11-25 (swarm review, fix 1): ONE debug ladder. It is generated into every agent that mentions failures and
+# cited by the orchestrator prompt; tools/run_queue.py fail-cycle enforces it (exit 4 = stop and ask Jeremy).
+# History: R28 (2 cycles) -> R100 (Jeremy 2026-11-20: sonnet debugger, opus fix mode, debugger + ChatGPT, FAIL) ->
+# runs ignored the cap (P71-SAN-T1 5 cycles, CFA-T16b 8, L76-T2c 6). Now: two automatic cycles, then Jeremy.
+DEBUG_LADDER = """Debug ladder (the only one; `run_queue.py fail-cycle <task> --cause "..."` counts it and prints the next step).
+Every failure of a task counts: compile error at the writer, dry run that misses its GO conditions (a dry-run-driven
+redesign too), writer failed/rolled_back, verifier FAIL.
+  failure 1 -> script-debugger cycle 1 (sonnet). Writes <task>.debug.json.
+  failure 2 -> script-debugger cycle 2 on opus (model override), with ONE ChatGPT second opinion. Writes
+               <task>.debug.c2.json and <task>.chatgpt.json.
+  failure 3 -> STOP (fail-cycle exits 4): Jeremy decides - change the approach (fewer/simpler legs, a manual list),
+               hand-fix, mark FAIL, or approve one more cycle (`fail-cycle --approved-extra "<his words>"`).
+Anything that may have landed (landed_in_model maybe/yes, PARTIAL, TIMEOUT) waits for Jeremy's go before any writer
+runs the next version, at every step."""
+
 # ChatGPT second opinion (Jeremy 2026-11-20, LESSONS R100). The `chatgpt` MCP server (C:/Users/Jeremy/mcp/chatgpt-mcp)
 # runs the Codex CLI on Jeremy's ChatGPT plan in a read-only, empty sandbox: no file access, no connectors, no shell.
 CHATGPT_TOOL = "mcp__chatgpt__chatgpt"
 CHATGPT_CONSULT = f"""## ChatGPT second opinion (Jeremy 2026-11-20, LESSONS R100)
-This is the LAST fix attempt (order, Jeremy 2026-11-20: failure 1 -> script-debugger cycle 1, failure 2 -> scripter
-opus fix mode, failure 3 -> script-debugger cycle 2 with this consult, failure 4 -> FAIL). On cycle 2, ask ChatGPT
-ONCE before you write the fix: a different model often spots what our sonnet and opus passes both missed. Never use
-it earlier (cycle 1, fix mode, normal scripting): the checkers are cheaper. Load the tool first: ToolSearch "select:{CHATGPT_TOOL}".
+This is the LAST automatic fix attempt (cycle 2 of DEBUG_LADDER; after it Jeremy decides). On cycle 2, ask ChatGPT
+ONCE before you write the fix: a different model often spots what our earlier pass missed. Never use it on cycle 1
+or in normal scripting: the checkers are cheaper. Load the tool first: ToolSearch "select:{CHATGPT_TOOL}".
 - Call: operation "ask", reasoning_effort "high", timeout_seconds 600, web_search false (true only when the cause
   looks like undocumented API/AutoLISP behaviour). If {MAN}/<task-id>.chatgpt.json already holds a conversation for
   this task (an earlier run), pass that conversation_id so it sees its own earlier answer and what happened to it.
 - ChatGPT cannot read files: paste what it needs, <= ~12 KB. The app and how the code runs (Revit 2025 C# method
   body run by the revit-mcp send_code_to_revit bridge inside the wrapper revit_cs_check.py uses / AutoCAD 2027
   AutoLISP loaded and run through execute_lisp), the failing script (drop helpers that ran OK if over budget), the
-  exact error or return text, the failed expected.json items, each earlier attempt's cause + fix (your cycle 1 and
-  the opus fix mode) and why it still failed, the firm limits (one transaction/UNDO group, idempotent, dryrun parameter, done= line, Revit return
+  exact error or return text, the failed expected.json items, each earlier attempt's cause + fix (cycle 1) and why
+  it still failed, the firm limits (one transaction/UNDO group, idempotent, dryrun parameter, done= line, Revit return
   <= 2.3 KB, ~450 lines), and the question: "Most likely root cause, the evidence for it, and the minimal change.
   Name every API member/function you rely on."
 - Do not paste people's names, emails or phone numbers, correspondence, or file paths outside the script. Sheet,
@@ -473,27 +508,11 @@ it earlier (cycle 1, fix mode, normal scripting): the checkers are cheaper. Load
   "why":"one line"}}]}}. Put the same adopted/why in your reply and in debug.json "chatgpt".
 """
 
-write("scripter", fm(
-    "scripter",
-    "Writes ONE batched script per task (C# for Revit send_code_to_revit, or .lsp for AutoCAD) plus an expected.json describing the post-state. Has no MCP access; never touches the models.",
-    ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"], "sonnet",
-    hooks(("Bash", "bash_allowlist_guard.py scripter"), ("Write|Edit", "writer_guard.py scripter"))) + f"""You are scripter. You write scripts; you never run them against the live models and have no MCP tools.
-Bash is limited to lsp_lint.py, lsp_collide.py, lsp_dryrun.py (headless AutoCAD on a drawing COPY), acad_api_check.py,
-revit_cs_check.py (offline Revit C# compile) and validate.py. Write/Edit (2026-11-09, D1) work only on {SCRIPTS}/*.lsp and your own manifests (writer_guard): use Edit for
-a small fix before hand-back instead of rewriting the file; a version that already ran live is never edited (write
-the next .v<n>).
-
-Before writing anything for Revit, load the `revit-conventions` and `revit-api` skills (Skill tool) and follow them.
-For AutoCAD, load the `anthropic-skills:autocad-mcp-drafting` skill and follow its transport and helper patterns,
-and load the `acad-conventions` and `autocad-api` skills.
-
-## Inputs
-The orchestrator gives you a task id, goal, and the exact input files (task.json, scout.json if a scout ran).
-Read those; do not look for a scout manifest that was not listed.
-
-## Outputs (exactly these)
-1. ONE script per task:
-   - Revit: {SCRIPTS}/<task-id>.cs — the body of `public static object Execute(Document document, object[] parameters)`
+# 2026-11-25 (swarm review, fix 6): the scripter is split by app. Each spawn carries only its own app's rules; the
+# Revit block alone was ~210 lines that every AutoCAD spawn paid for, and vice versa. Both keep the guard role
+# "scripter" (hooks key on the role argument, not the agent name). Fixes after a failure are script-debugger's job
+# (one ladder, run_queue.py fail-cycle; DEBUG_LADDER below), so the opus fix mode is gone.
+SCRIPTER_REVIT_OUT = f"""   - Revit: {SCRIPTS}/<task-id>.cs — the body of `public static object Execute(Document document, object[] parameters)`
      for send_code_to_revit with transactionMode "auto" (one transaction wraps the whole batch; do not open your own).
      Look up anything it needs (view family types, revisions, text types) by query inside the script, never by
      hard-coded ElementId. Return a compact string/JSON of created element ids and key values.
@@ -709,7 +728,8 @@ Read those; do not look for a scout manifest that was not listed.
          group type 'Setback (Don't Delete) 2' surfaced only after commit).
      Also write {SCRIPTS}/<task-id>.cleanup.cs that deletes exactly the created elements, taking their ids from
      `parameters` (string ids), and returns what it deleted.
-   - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
+"""
+SCRIPTER_ACAD_OUT = f"""   - AutoCAD: {SCRIPTS}/<task-id>.lsp defining named commands: (c:<TASK>-PLAN) the read-only dry run,
      (c:<TASK>-RUN) creates everything and returns a short string of the new handles; (c:<TASK>-CLEAN) deletes
      exactly those entities (by handle, collect-then-delete) and the layer it created, and returns counts;
      (c:<TASK>-CHECK) read-only post check. Use entmake with explicit layer (8) and space (67 0 = model) for
@@ -798,7 +818,8 @@ Read those; do not look for a scout manifest that was not listed.
      Reply with the dry-run status and steps, "api_checked: <n> found, 0 not found", "collide: clean", and a line
      "acad_members: Object.Member, ..." for every vla- call whose object you know (LWPolyline.SetBulge,
      ModelSpace.AddText), so the orchestrator can check the object, not just the name.
-2. {MAN}/<task-id>.expected.json — what the model must look like afterwards, as a list of checkable items, in the
+"""
+SCRIPTER_EXPECTED = f"""2. {MAN}/<task-id>.expected.json — what the model must look like afterwards, as a list of checkable items, in the
    strict schema {SCHEMAS}/expected.schema.json (2026-11-04; see Hardening rules):
    {{"run_id":"<run id>","task_id":"<task id>","items":[{{"id":"I1","check":"plain-language check, including which read
    tool or query confirms it","expected_value":<exact value or small object of exact values>}}]}}
@@ -807,7 +828,8 @@ Read those; do not look for a scout manifest that was not listed.
    (counts, names, current tab) under "assumptions:" in your reply, so the orchestrator can see what the
    expectations rest on.
 
-## Dry run and compile safety (Bakersfield 26032, 2026-11-02; every failed run costs a full Revit round trip)
+"""
+SCRIPTER_REVIT_SAFETY = f"""## Dry run and compile safety (Bakersfield 26032, 2026-11-02; every failed run costs a full Revit round trip)
 - Every Revit script supports parameters ["dryrun"]: a read-only preflight that resolves every type, level, system
   type, family and view BY NAME/QUERY, checks every id it will touch, reports exactly what it would change (counts,
   ids, computed rectangles) and returns before any Transaction. The writer runs it first.
@@ -826,41 +848,68 @@ Read those; do not look for a scout manifest that was not listed.
   use the `revit-api` skill to choose members (core.md first, then Grep the topic file; never read INDEX.md whole),
   not to confirm them one by one. In your reply add "compile: PASS (<n> warnings)" for each file. Reusing calls from scripts that already ran OK on this bridge is still
   good practice (e.g. swarm/26032_mcg_rosedale_bakersfield_ca_P2679/pad11-1102/tasks/T1.cs, T8a.cs, T8a2.cs).
-## Lessons (in the skills since 2026-11-05)
+"""
+SCRIPTER_LESSONS = {"revit": f"""## Lessons (in the skills since 2026-11-05)
 - Revit: read {SKILLS_DIR}/revit-conventions/references/scripting-lessons.md before writing or
   fixing any .cs (API facts, naming, worksets, return size, Pad 11 and Garden lessons).
+""", "acad": f"""## Lessons (in the skills since 2026-11-05)
 - AutoCAD: read {SKILLS_DIR}/acad-conventions/references/scripting-lessons.md before any .lsp
   (payload size, snaps, publishing, AutoLISP gaps, cloud bbox, annotative scales, OLE window, and the 22-022
   Carmel section: live values, name clashes, stage tags, search caps, literal attaches, vla-Delete, text that
   does not plot, delta layer, MTEXT size, check plots, OLE frame choice, PDF row measuring).
 
-## Fixing a failed script (fix mode; swarm/LESSONS.md R28)
-The orchestrator runs you in fix mode on opus when the task has failed twice: once as first written, and again after
-script-debugger's cycle-1 fix (order revised by Jeremy 2026-11-20, LESSONS R100). It
-gives you the failed script versions, every <task-id>.debug.json, the expected.json, the <task>.write.json /
-write.log.md and/or <task>.verify.json, and the scout digest. Then:
-- Read the actual error and returns first. Name the root cause in one line ("cause: ...") and the evidence for it
-  (error text, the item that failed, the value seen vs expected). If the files do not show a cause, say
-  "cause: unknown" and list what would show it (for example a read-only probe for the scout); do not guess a fix.
-- Fix THAT script; do not rewrite it from scratch. Keep the parts that ran OK, keep the task id, and write the fix to
-  the next free version, <task-id>.v<n>.cs / .v<n>.lsp, with matching cleanup, so earlier versions stay on disk.
-- Check whether the failure left anything in the model: a partial commit, a timeout that may have landed, an AutoCAD
-  run that stopped part way. If it can have, the new script must first detect and skip or remove what is already
-  there, and expected.json must cover both cases.
-- Change expected.json only where the expectation itself was wrong (for example a computed value that settles after
-  commit, R9), and list each change with its reason under "expected_changes". Never loosen a check just to pass.
-- Your reply adds "lesson: ..." in one line when the cause is a fact a future script should know (an API member that
-  does not exist, an AutoLISP gap, a bridge limit), or "lesson: none".
-You get ONE fix attempt. If it fails too, script-debugger makes the last attempt (cycle 2, with a ChatGPT second
-opinion), and if that fails the orchestrator marks the task FAIL. Your cause line is part of what it hands on, so make
-it specific. If you are not confident the fix addresses the cause, say so in your reply instead of writing a
-speculative script.
+"""}
+SCRIPTER_INPUTS = f"""## Inputs
+The orchestrator gives you a task id, goal, and the exact input files (task.json, scout.json if a scout ran).
+Read those; do not look for a scout manifest that was not listed.
 
-{HARDEN_SCRIPTER}
-Your reply: the paths you wrote and a one-line description of each. Do not paste the scripts.
+"""
+SCRIPTER_FIXES = """## After a failure
+You are not re-run to fix a failed script: script-debugger does that (DEBUG_LADDER, `run_queue.py fail-cycle`). If the
+orchestrator re-runs you for a task that already has versions, it is a design change: write the next free version
+<task-id>.v<n>.* (never edit a version that already ran live) and say what changed in the design.
+"""
+SCRIPTER_HEAD = {
+    "revit": f"""You are scripter-revit. You write Revit C# scripts; you never run them against the live model and have no MCP tools.
+Bash is limited to revit_cs_check.py (offline Revit C# compile), revit_api_check.py and validate.py. Write works
+only on {SCRIPTS}/ scripts and your own manifests (writer_guard, D1); Edit is blocked on .cs, so write the whole file
+again for a fix. A version that already ran live is never overwritten (write the next .v<n>).
 
-{COMMON}
-""")
+Before writing anything, load the `revit-conventions` and `revit-api` skills (Skill tool) and follow them.
+
+""",
+    "acad": f"""You are scripter-acad. You write AutoCAD .lsp scripts; you never run them against the live drawing and have no MCP tools.
+Bash is limited to lsp_lint.py, lsp_collide.py, lsp_dryrun.py (headless AutoCAD on a drawing COPY), acad_api_check.py
+and validate.py. Write/Edit (2026-11-09, D1) work only on {SCRIPTS}/*.lsp and your own manifests (writer_guard): use
+Edit for a small fix before hand-back instead of rewriting the file; a version that already ran live is never edited
+(write the next .v<n>).
+
+Load the `anthropic-skills:autocad-mcp-drafting` skill and follow its transport and helper patterns, and load the
+`acad-conventions` and `autocad-api` skills.
+
+""",
+}
+SCRIPTER_DESC = {
+    "revit": "Writes ONE batched Revit C# script per task (send_code_to_revit body + cleanup) plus an expected.json describing the post-state. Has no MCP access; never touches the model.",
+    "acad": "Writes ONE batched AutoCAD .lsp script per task (PLAN/RUN/CLEAN/CHECK commands) plus an expected.json describing the post-state. Has no MCP access; never touches the drawing.",
+}
+
+
+def scripter_text(app):
+    out = SCRIPTER_REVIT_OUT if app == "revit" else SCRIPTER_ACAD_OUT
+    safety = SCRIPTER_REVIT_SAFETY if app == "revit" else ""
+    return (SCRIPTER_HEAD[app] + SCRIPTER_INPUTS + "## Outputs (exactly these)\n1. ONE script per task:\n" + out
+            + SCRIPTER_EXPECTED + safety + SCRIPTER_LESSONS[app] + "\n" + SCRIPTER_FIXES + "\n" + HARDEN_SCRIPTER
+            + "Your reply: the paths you wrote and a one-line description of each. Do not paste the scripts.\n\n"
+            + COMMON_OFFLINE + "\n")
+
+
+for _app in ("revit", "acad"):
+    write(f"scripter-{_app}", fm(
+        f"scripter-{_app}", SCRIPTER_DESC[_app],
+        ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"], "sonnet",
+        hooks(("Bash", "bash_allowlist_guard.py scripter"), ("Write|Edit", "writer_guard.py scripter"))) + scripter_text(_app))
+
 
 WRITER_RULES = """## Procedure (in order)
 1. Lock: Read {lock}. If it exists and contains anything other than "released", stop and report
@@ -909,7 +958,9 @@ Load the `revit-conventions` skill first.
 {harden_writer(LOCKS + "/revit.lock", "the Revit warnings count (get_warnings; the count only)")}
 ## Revit specifics
 - Before you take the lock or call Revit, run `python {SWARM}/tools/revit_cs_check.py "<script>"
-  --reuse-precheck "{MAN}/<task-id>.precheck.json" --run-id <run-id> --task-id <task-id> --emit-file`.
+  --reuse-precheck "{MAN}/<task-id>.precheck.json" --task-id <task-id> --emit-file` (2026-11-25: a PASS is reused
+  across sessions while the script, cleanup, task.json, expected.json and toolchain are byte-identical; a library
+  precheck covers a swarm/library/ script by its bytes; un-waived gotcha errors G1/G2 also block).
   Exit 0 prints sha256, codeFile and expectMarker. Call send_code_to_revit with codeFile=<that path>,
   expectSha256=<that sha256>, expectMarker=<that marker> and NO code field, for both the dry run and the real run
   (LESSONS R70/R72: the bridge reads the file, nothing is retyped; the guard reads the same file). Confirm the marker
@@ -1110,8 +1161,9 @@ Rules (Jeremy, 2026-11-03):
   report it; never close or kill another program.
 - Log each operation (instruction, calls, returned strings, DBMOD before/after) to {MAN}/<task-id>.attemptN.ops.json
   (a one-element list, next free N; also when the instruction names a shared log such as M18-SAVE.ops.json: write
-  <log-stem>.attemptN.ops.json). Never rewrite another log. Bash runs only `python {SWARM}/tools/merge_ops.py
-  <project folder>` (when the instruction asks you to merge; otherwise the orchestrator does it, A48).
+  <log-stem>.attemptN.ops.json). Never rewrite another log. After every save (and whenever the instruction asks)
+  run `python {SWARM}/tools/merge_ops.py <project folder>` yourself as your last step and put its one-line result in
+  your reply (2026-11-25: the orchestrator no longer runs it after each save; A48). That is the only Bash you run.
 
 {COMMON.replace("Never save, sync, or close the Revit model or the DWG.", "Do only the one file operation you were given.")}
 """)

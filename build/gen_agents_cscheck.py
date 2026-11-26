@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from gen_agents import COMMON, MAN, RUN_ID_NOTE, SCRIPTS, SKILLS_DIR, SWARM, VALIDATE, fm, hooks, write  # noqa: E402
+from gen_agents import COMMON_OFFLINE as COMMON, MAN, RUN_ID_NOTE, SCRIPTS, SKILLS_DIR, SWARM, VALIDATE, fm, hooks, write  # noqa: E402
 
 CS_CHECK = f"python {SWARM}/tools/revit_cs_check.py"
 
@@ -34,7 +34,9 @@ Task id, run id, the script(s) ({SCRIPTS}/<task-id>[.v<n>].cs and its .cleanup.c
 {MAN}/<task-id>.expected.json, and the scout manifest if one ran.
 
 ## 1. Compile and lint (one Bash call for all scripts of the task)
-`{CS_CHECK} <script.cs> [<cleanup.cs> ...] --evidence`
+`{CS_CHECK} <script.cs> [<cleanup.cs> ...] --evidence --task-json {MAN}/<task-id>.task.json --expected-json {MAN}/<task-id>.expected.json`
+(always pass both flags, even when expected.json does not exist yet: the evidence binds the PASS to the exact bytes
+of task.json and expected.json, so the writer can reuse it across sessions while nothing changed, 2026-11-25).
 It wraps each file in the bridge's own template (namespace AIGeneratedCode, Execute(Document document, object[]
 parameters), usings System / Linq / Autodesk.Revit.DB / Autodesk.Revit.UI / Collections.Generic), compiles with the
 plugin's Roslyn against RevitAPI.dll 2025, and lints the contract (L1-L16: transactionMode header vs Transaction use,
@@ -44,6 +46,16 @@ A compile PASS proves every Revit type, member and overload exists in 2025; you 
 Compile errors print the script line and live_line (what the bridge would print: script line + 13).
 Lint is heuristic: a lint error you can show is wrong for this script (quote the lines) becomes a "minor" finding
 with the reason, not a FAIL. Never waive a compile error.
+Gotcha rules (2026-11-25; the failures that recurred across projects): G1-tee-on-sloped (NewTee/NewTakeoffFitting with
+no slope/direction check; R20/R48/R107) and G2-system-type-change (SetSystemType or a Set of
+RBS_PIPING_SYSTEM_TYPE_PARAM: systems merge on commit) are ERRORS: the precheck is FAIL unless the script carries
+`// gotcha-ok: G<n> <reason>` with a reason you accept (e.g. the tee is on a pipe the script itself drew level; the
+system change is the task). You cannot add a waiver; a missing or weak one is a blocker for the scripter.
+Warnings to review (a real gap is major, otherwise say nothing): G3-exact-name (a name compared to a literal with == /
+exact Equals: major only when the name comes from the model or the user - a family, type, sheet or parameter someone
+typed - and the script has no trimmed/case-insensitive compare or reported near-miss fallback; names the script
+creates itself, or that the scout read verbatim this run, are fine), G2's merge sub-check, and
+G4-obstacle-categories (clear-spot search without fixture/equipment/accessory obstacles).
 
 ## 2. Review against the task (read the script once, top to bottom; the compiler cannot see these)
 - Target: the document guard (document.Title / PathName) names the model in task.json; a wrong or missing guard is a
@@ -103,6 +115,9 @@ with the reason, not a FAIL. Never waive a compile error.
   the keynote-settings check and result file (R125/R126), with a hard-coded count (R127), case-insensitive parameter
   matching (R128), SetLinePatternId with InvalidElementId (R131), or a dry run whose failure capture ignores warnings
   (R134).
+- Fallbacks vs expected.json (2026-11-25: precheck flagged these as minor and they came back as verify FAILs): every
+  fallback branch (alternate position, name, type, value) either produces what expected.json checks or expected.json
+  covers it; a fallback the verifier would fail is major, not minor.
 - Cleanup script: deletes exactly the created elements,
   taking ids from parameters, and returns what it deleted.
 - The scripting-lessons pitfalls (systems merge on commit, cap placement, connector-based checks, namespaces, etc.).
@@ -116,8 +131,11 @@ Write {MAN}/<task-id>.precheck.json:
 "compile_errors":[{{"line","live_line","id","message"}}],"lint_errors":[...],"warnings":[...],"transaction_mode"}}],
 "findings":[{{"severity","file","line","rule","what","fix"}}],"dryrun_readonly":"yes|no|not_applicable",
 "expected_covered":"yes|partial|no|no_expected","notes":"optional"}}
-Copy each evidence row's absolute `file` to `path`, its `sha256` to `sha256`, and the shared `toolchain` to the
-top-level field. Include all reviewed scripts and cleanup files. If a file changed during your review, obtain
+Copy each evidence row's absolute `file` to `path`, its `sha256` to `sha256`, its `bound` object to the top-level
+"bound" (it is the same for every row), and the shared `toolchain` to the top-level field.
+Library scripts (a script under {SWARM}/library/, e.g. the export or scout scripts): run `{CS_CHECK} <file> --evidence
+--library` and write the precheck with "library": true (its scope is compile + lint, no task binding; it matches any
+task that uses those exact bytes with this toolchain). The orchestrator asks for one once per toolchain. Include all reviewed scripts and cleanup files. If a file changed during your review, obtain
 fresh evidence and review the new version. Then validate with
 `{VALIDATE} {SWARM}/schemas/precheck.schema.json {MAN}/<task-id>.precheck.json` (fix your JSON until valid).
 Reply in at most 4 lines: status, compile result per script, the blockers/majors (one line each, with line numbers),
